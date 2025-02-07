@@ -1,0 +1,25 @@
+FROM ubuntu:jammy as stage-build
+
+ARG JAVA_VERSION="17.0.6-tem"
+ARG MAVEN_VERSION="3.9.0"
+
+RUN apt-get update && \
+    apt-get install --yes --quiet --no-install-recommends ca-certificates curl zip unzip && \
+    curl -s "https://get.sdkman.io" | bash
+
+SHELL ["/bin/bash", "-c"]
+
+RUN source $HOME/.sdkman/bin/sdkman-init.sh && \
+    yes | sdk install java $JAVA_VERSION && \
+    yes | sdk install maven $MAVEN_VERSION && \
+    rm -rf $HOME/.sdkman/archives/* && \
+    rm -rf $HOME/.sdkman/tmp/*
+
+WORKDIR /app
+COPY . ./
+RUN --mount=type=cache,target=/root/.m2 source $HOME/.sdkman/bin/sdkman-init.sh && \
+        mvn clean verify
+
+FROM eclipse-temurin:17-jre-jammy
+COPY --from=stage-build /app/target/*-jar-with-dependencies.jar /myapp.jar
+CMD ["java","-jar","/myapp.jar"]
