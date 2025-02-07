@@ -1,0 +1,11 @@
+FROM eclipse-temurin:17-jdk-jammy as stage-build
+WORKDIR /app
+COPY .mvn/ .mvn
+COPY mvnw pom.xml ./
+RUN ./mvnw dependency:resolve
+COPY src ./src
+RUN ./mvnw clean verify
+
+FROM eclipse-temurin:17-jre-jammy
+COPY --from=stage-build /app/target/*-jar-with-dependencies.jar /myapp.jar
+CMD ["java","-jar","/myapp.jar"]
