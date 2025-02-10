@@ -16,10 +16,6 @@ RUN mvn dependency:resolve
 COPY src ./src
 RUN mvn clean verify
 
-# Create a non-root user for security
-RUN useradd -r -u 1001 -g root appuser
-USER appuser
-
 # Configure Java options for container environment
 ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
