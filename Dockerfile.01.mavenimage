@@ -1,12 +1,34 @@
-FROM maven:3.9.0-eclipse-temurin-17-focal
+# Base image with Maven and Java 21
+FROM maven:3.9.6-eclipse-temurin-21-jammy
 
+# Set working directory
 WORKDIR /app
+
+# Add metadata
+LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
+LABEL description="Java Hello World Application - Full Maven image"
+
+# Copy POM first to leverage Docker cache for dependencies
 COPY pom.xml ./
 RUN mvn dependency:resolve
-COPY src ./src
 
+# Copy source code and build the application
+COPY src ./src
 RUN mvn clean verify
 
-CMD mvn --quiet exec:java -Dexec.mainClass="fr.univtln.bruno.demos.docker.App"
-# CMD java -jar target/*-jar-with-dependencies.jar
-# CMD java -cp target/*-jar-with-dependencies.jar fr.univtln.bruno.demos.docker.App
+# Create a non-root user for security
+RUN useradd -r -u 1001 -g root appuser
+USER appuser
+
+# Configure Java options for container environment
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+# Choose one of the following run methods:
+# 1. Using Maven exec plugin (development)
+CMD ["mvn", "--quiet", "exec:java", "-Dexec.mainClass=fr.univtln.bruno.demos.docker.App"]
+
+# 2. Using JAR file directly (production recommended)
+# CMD java $JAVA_OPTS -jar target/*-jar-with-dependencies.jar
+
+# 3. Using classpath (alternative)
+# CMD java $JAVA_OPTS -cp target/*-jar-with-dependencies.jar fr.univtln.bruno.demos.docker.App

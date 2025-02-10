@@ -14,5 +14,6 @@ public class App
     public static void main( String[] args )
     {
         logger.info("Hello world maven + docker.");
+        System.out.println( "Hello World!" );
     }
 }
