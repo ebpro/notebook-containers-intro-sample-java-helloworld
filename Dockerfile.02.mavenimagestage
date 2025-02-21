@@ -9,7 +9,7 @@ RUN mvn dependency:resolve
 
 # Copy source code and build the application
 COPY src ./src
-RUN mvn clean verify
+RUN mvn -P uberjar clean verify
 
 # Stage 2: Runtime environment
 FROM eclipse-temurin:21-jre-jammy

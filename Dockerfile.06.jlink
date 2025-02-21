@@ -10,9 +10,12 @@ COPY mvnw pom.xml ./
 # Make Maven wrapper executable
 RUN chmod +x mvnw
 
+# Copy source code
+COPY src ./src
+
 # Download dependencies and build with jlink profile
 RUN --mount=type=cache,target=/root/.m2 \
-    ./mvnw -X clean package -P jlink
+    ./mvnw clean -P jlink package
 
 # Stage 2: Runtime image
 FROM ubuntu:jammy
@@ -22,7 +25,7 @@ LABEL version="0.1.0"
 
 # Copy the custom JRE and application
 COPY --from=builder /app/target/maven-jlink/classifiers/runtime-image/ /jre
-COPY --from=builder /app/target/*-with-dependencies.jar /app/myapp.jar
+COPY --from=builder /app/target/*.jar /app/myapp.jar
 
 # Create non-root user and set permissions
 RUN useradd -r -u 1001 -g root appuser && \
@@ -35,4 +38,4 @@ USER appuser
 ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
 # Use module path and module name
-ENTRYPOINT ["/jre/bin/java", "--module-path", "/app/myapp.jar", "--module", "fr.univtln.bruno.demos.docker/fr.univtln.bruno.demos.docker.App"]
+ENTRYPOINT ["/jre/bin/java", "-jar", "/app/myapp.jar"]

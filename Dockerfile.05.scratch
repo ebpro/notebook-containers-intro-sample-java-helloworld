@@ -34,7 +34,7 @@ COPY . ./
 # Use Maven cache mount to speed up builds
 RUN --mount=type=cache,target=/root/.m2 \
     source "$HOME"/.sdkman/bin/sdkman-init.sh && \
-    mvn clean verify
+    mvn -P uberjar clean verify
 
 # Stage 2: Runtime environment
 # Use slim JRE image for smaller final image size
