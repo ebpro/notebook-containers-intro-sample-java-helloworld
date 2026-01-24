@@ -1,14 +1,11 @@
 module fr.univtln.bruno.demos.docker {
-    // Required modules
-    requires java.base;
+
+    // Required modules (used directly in the code)
     requires org.slf4j;
-    requires ch.qos.logback.classic;
-    requires ch.qos.logback.core;
-    requires java.logging;
-    
-    // Exports
+
+    // Declare SPI usage so ServiceLoader works when running on the module path
+    uses fr.univtln.bruno.demos.docker.Marker;
+
+    // Public API of the module
     exports fr.univtln.bruno.demos.docker;
-    
-    // Opens for logging configuration
-    opens fr.univtln.bruno.demos.docker to ch.qos.logback.classic, ch.qos.logback.core;
 }

@@ -1,0 +1,119 @@
+name: CI (self-hosted-safe)
+
+on:
+  push:
+    branches:
+      - 'feature/*'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - 'feature/*'
+
+permissions:
+  contents: read
+
+env:
+  DOCKER_REPO: brunoe/javahello
+  LOCAL_REPO_PREFIX: javahello
+
+jobs:
+  validate:
+    name: Validate (Maven, GH-hosted)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Cache Maven repo
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Validate
+        run: ./mvnw -DskipTests validate
+
+  build-docker:
+    name: Build & smoke-test images (self-hosted, matrix)
+    needs: validate
+    runs-on: [self-hosted, Linux, X64]
+    if: >
+      github.event_name == 'push'
+      || (github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository)
+
+    strategy:
+      matrix:
+        image:
+          - { tag: "01", name: "mavenimage", file: "Dockerfile.01.mavenimage" }
+          - { tag: "02", name: "mavenimagestage", file: "Dockerfile.02.mavenimagestage" }
+          - { tag: "03", name: "dockercache", file: "Dockerfile.03.dockercache" }
+          - { tag: "05", name: "manual", file: "Dockerfile.05.manual" }
+          - { tag: "06", name: "jlink", file: "Dockerfile.06.jlink" }
+          - { tag: "06b", name: "jlink-alpine", file: "Dockerfile.06b.jlink-alpine" }
+          - { tag: "07", name: "graalvm", file: "Dockerfile.07.graalVM" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Maven repo
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+
+      - name: Build image
+        run: |
+          docker buildx build \
+            --progress=plain \
+            --load \
+            -t $LOCAL_REPO_PREFIX:${{ matrix.image.tag }} \
+            -t $LOCAL_REPO_PREFIX:${{ matrix.image.name }} \
+            -f ${{ matrix.image.file }} .
+
+      - name: Smoke test
+        run: |
+          NAME=${{ matrix.image.name }}
+
+          # skip smoke-run for heavy native image (graalvm) in CI matrix
+          if [ "$NAME" = "graalvm" ]; then
+            echo "Skipping smoke test for graalvm native image"
+            exit 0
+          fi
+
+          docker run --rm $LOCAL_REPO_PREFIX:$NAME
+
+  publish:
+    name: Publish images (tags only)
+    runs-on: [self-hosted, Linux, X64]
+    needs: build-docker
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to registry
+        uses: docker/login-action@v2
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push images
+        run: |
+          docker tag $LOCAL_REPO_PREFIX:jlink-alpine $DOCKER_REPO:jlink-alpine-${{ github.sha }}
+          docker push $DOCKER_REPO:jlink-alpine-${{ github.sha }}
+
+          docker tag $LOCAL_REPO_PREFIX:graalvm $DOCKER_REPO:graalvm-${{ github.sha }}
+          docker push $DOCKER_REPO:graalvm-${{ github.sha }}

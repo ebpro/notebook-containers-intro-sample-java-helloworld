@@ -1,0 +1,59 @@
+# ------------------------------------------------------------
+# Stage: build
+# Purpose: compile the application and produce a custom runtime via jlink on Alpine/musl
+# Base image: eclipse-temurin:21-jdk-alpine-3.23
+# Maven profile: -Pjlink
+# Artifact: target/maven-jlink/classifiers/runtime-image (copied to /jre)
+# Notes: building for musl; verify jlink output compatibility with Alpine runtime
+# ------------------------------------------------------------
+FROM eclipse-temurin:21-jdk-alpine-3.23 AS build
+
+WORKDIR /app
+
+COPY mvnw ./
+COPY .mvn .mvn
+RUN chmod +x mvnw
+
+COPY pom.xml ./
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -B dependency:resolve
+
+COPY src ./src
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -Pjlink clean package
+
+# Ensure jlink output is in a stable location inside the build image
+# Some configurations place runtime image under target/maven-jlink/classifiers/runtime-image
+# Copy contents to /app/jre so the final stage can reliably COPY from /app/jre
+RUN mkdir -p /app/jre \
+ && if [ -d target/maven-jlink/classifiers/runtime-image ]; then \
+			cp -a target/maven-jlink/classifiers/runtime-image/* /app/jre/ ; \
+		fi
+
+
+# ------------------------------------------------------------
+# Stage: runtime
+# Purpose: minimal Alpine runtime with jlink-generated runtime image
+# Base image: alpine:3.23.2
+# Copies: /jre from build stage to /jre in final image
+# Notes: ensure TLS CA certificates are installed in Alpine; runtime relies on musl libc
+# ------------------------------------------------------------
+FROM alpine:3.23.2
+
+WORKDIR /app
+
+# Certificats TLS indispensables
+RUN apk add --no-cache ca-certificates
+
+# Runtime jlink (use stable path produced in build stage)
+COPY --from=build /app/jre /jre
+# Sécurité minimale: create user and ensure /jre permissions
+RUN adduser -D -u 1001 appuser \
+	&& chown -R appuser:appuser /jre
+
+# Install generic entrypoint script and make it executable
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh || true
+
+USER appuser
+
+# Use generic entrypoint to run the jlink launcher
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

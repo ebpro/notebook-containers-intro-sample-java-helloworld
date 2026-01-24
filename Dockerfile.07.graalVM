@@ -1,64 +1,48 @@
-# Multi-stage build for Java application with GraalVM native image
-# Stage 1: Build environment with GraalVM
-FROM ghcr.io/graalvm/native-image-community:21 AS builder
+# ------------------------------------------------------------
+# Stage: build
+# Purpose: build a static native binary using GraalVM native-image
+# Base image: ghcr.io/graalvm/native-image-community:25-muslib
+# Maven profile: -Pgraalvm
+# Artifact: target/app (native binary)
+# Notes: install zlib-static and use musl toolchain; verify binary is truly static before final image
+# ------------------------------------------------------------
+FROM ghcr.io/graalvm/native-image-community:25-muslib AS builder
+
+# Installation de zlib-static (indispensable pour le flag --static)
+RUN microdnf install -y gcc make binutils zlib-static && microdnf clean all
+
 WORKDIR /app
 
-# Copy Maven wrapper files first
+# IMPORTANT : On force l'utilisation du compilateur musl pour les tests de fonctionnalités
+ENV CC=/usr/local/musl/bin/gcc
+
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
-
-# Make Maven wrapper executable
 RUN chmod +x mvnw
 
-# Download dependencies separately to leverage Docker cache
-RUN --mount=type=cache,target=/root/.m2 ./mvnw dependency:resolve
+# On télécharge les dépendances
+RUN --mount=type=cache,target=/root/.m2 ./mvnw dependency:go-offline -Pgraalvm
 
-# Copy source code and build the application
 COPY src ./src
-RUN --mount=type=cache,target=/root/.m2 ./mvnw clean package
 
-# Generate native image with optimizations
-RUN native-image \
-    --no-fallback \
-    --static \
-    -H:+ReportExceptionStackTraces \
-    -H:Name=app \
-    -H:+RemoveSaturatedTypeFlows \
-    -H:+PreserveFramePointer \
-    -H:+InlineBeforeAnalysis \
-    -H:+AddAllCharsets \
-    -H:EnableURLProtocols=http,https \
-    -H:ConfigurationFileDirectories=/app/src/main/resources/META-INF/native-image/fr.univtln.bruno.demos.docker \
-    --initialize-at-build-time=org.slf4j,ch.qos.logback \
-    --module-path target/*-jar-with-dependencies.jar \
-    --module fr.univtln.bruno.demos.docker
+# On lance la compilation via Maven
+# Le flag --libc=musl dans le POM fera le reste
+RUN --mount=type=cache,target=/root/.m2 ./mvnw package -Pnative -DskipTests
 
-# Stage 2: Runtime image
-FROM scratch
-LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
-LABEL description="Java Hello World Application with GraalVM Native Image"
-LABEL version="0.1.0"
-LABEL org.opencontainers.image.source="https://github.com/yourusername/yourrepo"
+# Place any produced native binary in a stable location (/app/app) so final stage can copy it
+RUN mkdir -p /app \
+ && candidate=$(find target -type f \( -name app -o -name "*app" -o -name "*native*" -o -name "*-runner" -o -name "*.exe" -o -name "*.bin" -o -name "*.so" \) 2>/dev/null | head -n 1 || true) \
+ && if [ -n "$candidate" ]; then cp "$candidate" /app/app; chmod +x /app/app || true; else echo "No native artifact found under target/" >&2; fi
 
-# Add SSL certificates for HTTPS support
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# Create non-root user (even though we're using scratch)
-COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder /etc/group /etc/group
-
-# Copy the native executable
-COPY --from=builder /app/app /app
-
-# Create directory for logs with proper permissions
-COPY --from=builder --chown=1001:0 /dev/null /logs/
-
-# Set user
-USER 1001
-
-# Set environment variables
-ENV APP_HOME=/app
-ENV LOG_DIR=/logs
-
-# Run the native executable
-ENTRYPOINT ["/app"]
+# ------------------------------------------------------------
+# Stage: runtime
+# Purpose: minimal final image for the static native binary
+# Base image: gcr.io/distroless/static-debian12
+# Copies: /app/app (native binary) from build stage
+# Notes: distroless static image contains no shell; ensure user exists or set numeric UID and that binary is static
+# ------------------------------------------------------------
+FROM gcr.io/distroless/static-debian12
+COPY --from=builder /app/app /app/app
+# Use numeric UID/GID to avoid relying on username existing in distroless
+USER 65532:65532
+ENTRYPOINT ["/app/app"]

@@ -1,1 +1,7 @@
+# .dockerignore
 target
+.git
+*.log
+*.class
+.idea
+.vscode
