@@ -1,41 +1,73 @@
-# Multi-stage build for Java application with jlink using Maven profile
-# Stage 1: Build environment
-FROM eclipse-temurin:21-jdk-jammy AS builder
+# ------------------------------------------------------------
+# Stage: build
+# Purpose: compile the application and produce a custom runtime via jlink
+# Base image: maven:3.9.12-eclipse-temurin-21-noble
+# Maven profile: -Pjlink
+# Artifact: target/maven-jlink/classifiers/runtime-image (copied to /jre)
+# Notes: maven-jlink-plugin produces a modular runtime image and a launcher; verify launcher name
+# ------------------------------------------------------------
+FROM maven:3.9.12-eclipse-temurin-21-noble AS build
+
+LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
+LABEL description="Java Hello World - jlink build stage"
+LABEL license="MIT"
+
 WORKDIR /app
 
-# Copy Maven wrapper files first
-COPY .mvn/ .mvn/
-COPY mvnw pom.xml ./
-
-# Make Maven wrapper executable
+# Maven Wrapper
+COPY mvnw ./
+COPY .mvn .mvn
 RUN chmod +x mvnw
 
-# Copy source code
-COPY src ./src
-
-# Download dependencies and build with jlink profile
+# Pré-chargement des dépendances (cache Docker)
+COPY pom.xml ./
 RUN --mount=type=cache,target=/root/.m2 \
-    ./mvnw clean -P jlink package
+    ./mvnw --batch-mode dependency:resolve
 
-# Stage 2: Runtime image
-FROM ubuntu:jammy
+# Sources + build jlink
+COPY src ./src
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw --batch-mode -Pjlink clean package
+
+# Ensure jlink output is placed in a stable location inside the build image
+# Some maven-jlink-plugin configurations produce the runtime image under
+# target/maven-jlink/classifiers/runtime-image; copy its contents to /app/jre
+RUN mkdir -p /app/jre \
+ && if [ -d target/maven-jlink/classifiers/runtime-image ]; then \
+            cp -a target/maven-jlink/classifiers/runtime-image/* /app/jre/ ; \
+        fi
+
+
+# ------------------------------------------------------------
+# Stage: runtime
+# Purpose: minimal runtime built from the jlink-generated runtime-image
+# Base image: debian:bookworm-slim
+# Copies: /jre (runtime image) from build stage to /jre in final image
+# Notes: jlink runtime is custom and contains only required modules; run the launcher at /jre/bin/hello
+# ------------------------------------------------------------
+FROM debian:bookworm-slim
+
 LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
-LABEL description="Java Hello World Application with Custom JRE"
+LABEL description="Java Hello World - jlink runtime"
 LABEL version="0.1.0"
 
-# Copy the custom JRE and application
-COPY --from=builder /app/target/maven-jlink/classifiers/runtime-image/ /jre
-COPY --from=builder /app/target/*.jar /app/myapp.jar
+# Répertoire applicatif
+WORKDIR /app
 
-# Create non-root user and set permissions
-RUN useradd -r -u 1001 -g root appuser && \
-    chown -R appuser:root /app && \
-    chmod -R g=u /app
+# Runtime Java custom généré par jlink
+COPY --from=build /app/jre /jre
+
+# Utilisateur non-root (bonne pratique)
+# Create a dedicated group 'appuser' and add the user to it, then set ownership on /jre
+RUN groupadd -g 1001 appuser \
+ && useradd --system --uid 1001 -g appuser -s /usr/sbin/nologin appuser \
+ && chown -R appuser:appuser /jre \
+ && chmod -R go-w /jre
 
 USER appuser
 
-# Configure Java options for containers
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
-
-# Use module path and module name
-ENTRYPOINT ["/jre/bin/java", "-jar", "/app/myapp.jar"]
+# Exécution via le launcher jlink
+# Prefer generic entrypoint: it will detect and exec the jlink launcher (/jre/bin/hello)
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh || true
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

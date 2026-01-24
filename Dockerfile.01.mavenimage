@@ -1,30 +1,50 @@
-# Base image with Maven and Java 21
-FROM maven:3.9.6-eclipse-temurin-21-jammy
+# ------------------------------------------------------------
+# Stage: build (single-stage)
+# Purpose: compile the application using Maven and package the artifact
+# Base image: maven:3.9.12-eclipse-temurin-21-noble
+# Maven profile: -Pprod
+# Artifact: target/hello-world-0.0.1-SNAPSHOT.jar
+# Notes: single-stage image includes build tools; consider multi-stage to reduce final image size
+# ------------------------------------------------------------
+FROM maven:3.9.12-eclipse-temurin-21-noble
 
-# Set working directory
-WORKDIR /app
-
-# Add metadata
 LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
 LABEL description="Java Hello World Application - Full Maven image"
+LABEL version="0.1.0-SNAPSHOT"
+LABEL license="MIT"
 
-# Copy POM first to leverage Docker cache for dependencies
+WORKDIR /app
+
+# Copy wrapper
+COPY mvnw ./
+COPY .mvn .mvn
+RUN chmod +x mvnw
+
+# Copy POM first to leverage Docker cache
 COPY pom.xml ./
-RUN mvn dependency:resolve
+RUN ./mvnw --batch-mode dependency:resolve
 
 # Copy source code and build the application
 COPY src ./src
-RUN mvn clean verify
+RUN ./mvnw --batch-mode -Pprod -DskipTests clean package
 
-# Configure Java options for container environment
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+# Copy entrypoint script and make it executable
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh || true
 
-# Choose one of the following run methods:
-# 1. Using Maven exec plugin (development)
-CMD ["mvn", "--quiet", "exec:java", "-Dexec.mainClass=fr.univtln.bruno.demos.docker.App"]
+# Prepare a canonical runtime artifact path (/app/app.jar) if build produced a jar
+# Use wildcard to match the built jar (SNAPSHOT or versioned)
+RUN cp target/*.jar /app/app.jar 2>/dev/null || true
+# Copy runtime dependency jars (produced by -Pprod) so manifest Class-Path 'libs/' resolves
+RUN cp -r target/libs /app/libs 2>/dev/null || true
 
-# 2. Using JAR file directly (production recommended)
-# CMD java $JAVA_OPTS -jar target/*-jar-with-dependencies.jar
+# Create non-root user (only for running)
+RUN groupadd -r appuser && useradd -r -g appuser -m appuser \
+    && chown -R appuser:appuser /app
 
-# 3. Using classpath (alternative)
-# CMD java $JAVA_OPTS -cp target/*-jar-with-dependencies.jar fr.univtln.bruno.demos.docker.App
+USER appuser
+ENV HOME=/home/appuser
+
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75"
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

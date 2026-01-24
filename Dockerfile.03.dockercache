@@ -1,10 +1,10 @@
 # ------------------------------------------------------------
 # Stage: build
-# Purpose: compile the application using Maven in the build stage
+# Purpose: compile the application using Maven with cache mounts enabled
 # Base image: maven:3.9.12-eclipse-temurin-21-noble
 # Maven profile: -Pprod
 # Artifact: target/hello-world-*-SNAPSHOT.jar
-# Notes: use cache mounts for /root/.m2 to speed up dependency resolution
+# Notes: uses --mount=type=cache for /root/.m2 to speed up builds; cache is not persisted in final image
 # ------------------------------------------------------------
 FROM maven:3.9.12-eclipse-temurin-21-noble AS stage-build
 
@@ -22,17 +22,18 @@ RUN chmod +x mvnw
 
 # Copy POM first to leverage Docker cache for dependencies
 COPY pom.xml ./
-RUN ./mvnw --batch-mode dependency:resolve
+RUN --mount=type=cache,target=/root/.m2 ./mvnw --batch-mode dependency:resolve
 
 # Copy source code and build the application
 COPY src ./src
-RUN ./mvnw --batch-mode -Pprod -DskipTests clean package
+RUN --mount=type=cache,target=/root/.m2 ./mvnw --batch-mode -Pprod -DskipTests clean package
+
 # ------------------------------------------------------------
 # Stage: runtime
-# Purpose: provide a minimal runtime image with Temurin JRE
+# Purpose: minimal runtime with Temurin JRE containing the packaged application
 # Base image: eclipse-temurin:21.0.9_10-jre-noble
-# Copies: /app/app.jar (from build stage) and /app/libs if provided
-# Notes: run the application as a non-root user; keep runtime image minimal
+# Copies: /app/app.jar and /app/libs from build stage
+# Notes: create a non-root user for security and set JAVA_OPTS appropriately
 # ------------------------------------------------------------
 FROM eclipse-temurin:21.0.9_10-jre-noble
 
@@ -46,10 +47,6 @@ COPY --from=stage-build /app/target/hello-world-*-SNAPSHOT.jar /app/app.jar
 # Copy the libs directory (containing dependencies) if needed
 COPY --from=stage-build /app/target/libs /app/libs
 
-# Install entrypoint script (exec form) and make it executable
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh || true
-
 # Create a non-root user for security and ensure app files are owned by that user
 RUN groupadd -r appuser && useradd -r -u 1001 -g appuser -m appuser \
     && chown -R appuser:appuser /app
@@ -57,8 +54,11 @@ RUN groupadd -r appuser && useradd -r -u 1001 -g appuser -m appuser \
 USER appuser
 ENV HOME=/home/appuser
 
-# Configure Java options for container environment (default, overridable)
+# Configure Java options for container environment
 ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+# Install generic entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh || true
 
-# Use exec-form entrypoint script to preserve signals and expand JAVA_OPTS
+# Use generic exec-form entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
