@@ -12,20 +12,10 @@ on:
 
 permissions:
   contents: read
-name: CI (self-hosted-safe)
 
-on:
-  push:
-    branches:
-      - 'feature/*'
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - 'feature/*'
-
-permissions:
-  contents: read
+env:
+  DOCKER_REPO: brunoe/javahello
+  LOCAL_REPO_PREFIX: javahello
 
 jobs:
   validate:
@@ -88,8 +78,8 @@ jobs:
           docker buildx build \
             --progress=plain \
             --load \
-            -t javahello:${{ matrix.image.tag }} \
-            -t javahello:${{ matrix.image.name }} \
+            -t $LOCAL_REPO_PREFIX:${{ matrix.image.tag }} \
+            -t $LOCAL_REPO_PREFIX:${{ matrix.image.name }} \
             -f ${{ matrix.image.file }} .
 
       - name: Smoke test
@@ -102,7 +92,7 @@ jobs:
             exit 0
           fi
 
-          docker run --rm javahello:$NAME
+          docker run --rm $LOCAL_REPO_PREFIX:$NAME
 
   publish:
     name: Publish images (tags only)
@@ -122,8 +112,8 @@ jobs:
 
       - name: Push images
         run: |
-          docker tag javahello:06b brunoe/javahello:06b-${{ github.sha }}
-          docker push brunoe/javahello:06b-${{ github.sha }}
+          docker tag $LOCAL_REPO_PREFIX:jlink-alpine $DOCKER_REPO:jlink-alpine-${{ github.sha }}
+          docker push $DOCKER_REPO:jlink-alpine-${{ github.sha }}
 
-          docker tag javahello:07 brunoe/javahello:07-${{ github.sha }}
-          docker push brunoe/javahello:07-${{ github.sha }}
+          docker tag $LOCAL_REPO_PREFIX:graalvm $DOCKER_REPO:graalvm-${{ github.sha }}
+          docker push $DOCKER_REPO:graalvm-${{ github.sha }}
