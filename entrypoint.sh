@@ -1,34 +1,28 @@
 #!/bin/sh
 set -e
-# Generic entrypoint: detect and run the appropriate artifact
-# Priority: /app/app.jar -> any executable in /jre/bin -> /app/app (native) -> first jar in /app or /app/target
-# Usage: entrypoint.sh [app-args]
 
+# 1. Priorité : JAR Standard (Profil -Pprod)
 if [ -f /app/app.jar ]; then
-	exec java ${JAVA_OPTS} -jar /app/app.jar "$@"
+    exec java ${JAVA_OPTS:-} -jar /app/app.jar "$@"
 fi
 
-# If jlink produced a custom runtime, the launcher name varies.
-# Look for the first executable file under /jre/bin and run it.
-if [ -d /jre/bin ]; then
-	for f in /jre/bin/*; do
-		if [ -x "$f" ] && [ ! -d "$f" ]; then
-			exec "$f" "$@"
-		fi
-	done
+# 2. Priorité : JLink (Profil -Pjlink)
+# On cherche spécifiquement le launcher 'hello' défini dans le POM
+if [ -x /jre/bin/hello ]; then
+    exec /jre/bin/hello "$@"
 fi
 
+# 3. Priorité : GraalVM Native (Profil -Pnative)
+# On utilise le nom défini dans <imageName> du POM
 if [ -x /app/app ]; then
-	exec /app/app "$@"
+    exec /app/app "$@"
 fi
 
-jar=$(ls /app/*.jar 2>/dev/null | head -n 1)
-if [ -z "$jar" ]; then
-	jar=$(ls /app/target/*.jar 2>/dev/null | head -n 1)
-fi
+# 4. Fallback (Sécurité pour Dockerfile.01)
+jar=$(ls /app/*.jar /app/target/*.jar 2>/dev/null | head -n 1)
 if [ -n "$jar" ]; then
-	exec java ${JAVA_OPTS} -jar "$jar" "$@"
+    exec java ${JAVA_OPTS:-} -jar "$jar" "$@"
 fi
 
-echo "No runnable artifact found in /app or /jre" >&2
+echo "❌ Erreur : Aucun artefact exécutable (JAR, jlink 'hello' ou natif) trouvé." >&2
 exit 1
