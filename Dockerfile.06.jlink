@@ -64,6 +64,10 @@ RUN groupadd -g 1001 appuser \
  && chown -R appuser:appuser /jre \
  && chmod -R go-w /jre
 
+# Ensure UTF-8 is used inside the container and force Java file.encoding
+ENV LANG=C.UTF-8
+ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8 ${JAVA_TOOL_OPTIONS:-}"
+
 USER appuser
 
 # Exécution via le launcher jlink

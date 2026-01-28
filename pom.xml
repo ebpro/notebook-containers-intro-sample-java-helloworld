@@ -288,7 +288,7 @@
 
               <classifier>runtime-image</classifier>
 
-              <addModules>ALL-MODULE-PATH,java.naming</addModules>
+              <addModules>ALL-MODULE-PATH,java.naming,jdk.charsets</addModules>
 
               <launcher>hello=fr.univtln.bruno.demos.docker/fr.univtln.bruno.demos.docker.App</launcher>
 

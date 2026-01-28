@@ -20,13 +20,13 @@ FILES=(
 )
 
 TAGS=(
-  javahello:01
-  javahello:02
-  javahello:03
-  javahello:05
-  javahello:06
-  javahello:06b
-  javahello:07
+  javahello:mavenimage
+  javahello:mavenimagestage
+  javahello:dockercache
+  javahello:manual
+  javahello:jlink
+  javahello:jlink-alpine
+  javahello:graalVM
 )
 
 echo "Using docker command: $DOCKER"

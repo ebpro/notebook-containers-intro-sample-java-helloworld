@@ -57,3 +57,6 @@ USER appuser
 
 # Use generic entrypoint to run the jlink launcher
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Force Java to use UTF-8 even on musl/Alpine
+ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8 ${JAVA_TOOL_OPTIONS:-}"
