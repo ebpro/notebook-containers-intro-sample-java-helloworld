@@ -26,9 +26,10 @@ ORDER=(
     "07.graalVM"
 )
 
-echo -e "\n🚀 Benchmark : Analyse de l'Efficience (Build vs Runtime)\n"
-echo "| Image Tag | Build Cold | Build Warm | Build Incr. | Size | Peak RAM | Footprint Index |"
-echo "|:----------|:-----------|:-----------|:------------|:-----|:---------|:----------------|"
+echo "Here size means the final image size, while peak RAM is the maximum memory usage observed during runtime."
+echo -e "\n Benchmark : Analyse de l'Efficience (Build vs Runtime)\n"
+echo "| Image Tag | Build Cold | Build Warm | Build Incr. | Size | Peak RAM |"
+echo "|:----------|:-----------|:-----------|:------------|:-----|:---------|"
 
 for KEY in "${ORDER[@]}"; do
     TAG=${BUILDS[$KEY]}
@@ -83,20 +84,33 @@ EOF
 
     # Nettoyage (aucune trace persistante)
     rm -f "$FAKE_JAVA" "$SPI_FILE"
-    rmdir "$SPI_DIR" 2>/dev/null
-    rmdir "src/main/resources/META-INF" 2>/dev/null
-    rmdir "src/main/resources" 2>/dev/null
+    #rmdir "$SPI_DIR" 2>/dev/null
+    #rmdir "src/main/resources/META-INF" 2>/dev/null
+    #rmdir "src/main/resources" 2>/dev/null
 
     # --------------------------------------------------------
     # 4. RUNTIME STATS (Peak RAM)
     # --------------------------------------------------------
-    SIZE_STR=$(docker images --format "{{.Size}}" "$FULL_TAG")
+    SIZE_STR=$(docker image inspect "$FULL_TAG" \
+    --format '{{.Size}}' 2>/dev/null \
+    | awk '{printf "%.1fMB", $1/1024/1024}')
+
+
     CID=$(docker run -d "$FULL_TAG")
+    sleep 0.5
     PEAK_MEM_RAW=0
+
 
     while [ "$(docker ps -q -f id=$CID)" ]; do
         M_STR=$(docker stats --no-stream --format "{{.MemUsage}}" "$CID" | awk '{print $1}')
-        VAL=$(echo "$M_STR" | sed 's/[A-Za-z]//g')
+
+        VAL=$(echo "$M_STR" | sed 's/[^0-9.]//g')
+        UNIT=$(echo "$M_STR" | sed 's/[0-9.]//g')
+
+        case "$UNIT" in
+            GiB) VAL=$(echo "$VAL * 1024" | bc -l) ;;
+            KiB) VAL=$(echo "$VAL / 1024" | bc -l) ;;
+        esac
 
         if [[ -n "$VAL" ]] && (( $(echo "$VAL > $PEAK_MEM_RAW" | bc -l 2>/dev/null || echo 0) )); then
             PEAK_MEM_RAW=$VAL
@@ -106,15 +120,9 @@ EOF
 
     docker rm -f "$CID" > /dev/null 2>&1
 
-    # --------------------------------------------------------
-    # 5. FOOTPRINT INDEX
-    # --------------------------------------------------------
-    SIZE_NUM=$(echo "$SIZE_STR" | sed 's/[A-Za-z]//g')
-    SCORE=$(echo "($PEAK_MEM_RAW * 3) + ($SIZE_NUM / 10)" | bc -l)
-
-    printf "| %-15s | %10s | %10s | %11s | %8s | %8.2f MiB | %15.1f |\n" \
+    printf "| %-15s | %10s | %10s | %11s | %8s | %8.2f MB |\n" \
         "$TAG" "$COLD_TIME" "$WARM_TIME" "$INCR_TIME" \
-        "$SIZE_STR" "$PEAK_MEM_RAW" "$SCORE"
+        "$SIZE_STR" "$PEAK_MEM_RAW"
 done
 
 echo -e "\n*Note : Footprint Index = (RAM × 3) + (Size / 10). Plus l'indice est faible, plus l'image est efficiente.*"
