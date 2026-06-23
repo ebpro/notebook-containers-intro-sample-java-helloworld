@@ -1,354 +1,464 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  POM = Project Object Model
-  This file describes the project and tells Maven:
-  - what the project is
-  - how to build it
-  - which dependencies it needs
--->
+    <!--
+
+       # JVM (Jar + libs/ + Dockerfile)
+      ./mvnw clean package -Pjvm
+       java -cp ./target/libs/ -jar target/hello-world-0.1.0-SNAPSHOT.jar
+
+      # jlink (custom runtime image)
+      ./mvnw clean package -Pjlink
+      ./target/maven-jlink/classifiers/runtime-image/bin/app
+
+      # GraalVM native
+      # ATTENTION IL FAUT A AVOIR INSTALLÉ GRAALVM POUR LE BUILD NATIVE et pas un simple JDK
+      # sdk list java|grep graalce puis sdk install mais ne pas mettre par defaut
+      # sdk install java 25.0.2-graalce
+      # sdk use java 25.0.2-graalce
+      ./mvnw clean package -Pnative
+      ./target/app
+
+      # GraalVM native+static (UNIQUEMENT avec musl et pas glibc)
+      ./mvnw -Pnative,native-static -DskipTests package
+
+      # optional Jib (no Dockerfile OCI build)
+      ./mvnw clean package -Pjib
+
+      # Security scan
+      ./mvnw clean package -Pscan
+    -->
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                      http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
-  <!-- Maven model version (almost always 4.0.0) -->
-  <modelVersion>4.0.0</modelVersion>
+    <modelVersion>4.0.0</modelVersion>
 
-  <!-- Project coordinates (unique identifier) -->
-  <!-- groupId : usually organization or package base -->
-  <!-- artifactId : project name -->
-  <!-- version : project version -->
-  <groupId>fr.univtln.bruno.demos.docker</groupId>
-  <artifactId>hello-world</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+    <!-- ========================================================= -->
+    <!-- PROJECT COORDINATES                                       -->
+    <!-- ========================================================= -->
 
-  <!-- Human-readable project information -->
-  <name>Hello World</name>
-  <description>
-    Application Java "Hello World" utilisée pour démontrer Maven et Docker
-  </description>
-  <url>https://github.com/ebpro/notebook-containers-intro-sample-java-helloworld</url>
+    <groupId>fr.univtln.bruno.demos.docker</groupId>
+    <artifactId>hello-world</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
 
-  <!--
-    Properties:
-    - Central place to define versions and configuration values
-    - Avoids repeating version numbers everywhere
-  -->
-  <properties>
+    <name>hello-world-containers</name>
+    <description>Teaching project: JVM vs jlink vs GraalVM vs Jib (containerization 2026)</description>
 
-    <!-- Encoding used for source files and reports -->
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <!-- ========================================================= -->
+    <!-- PROPERTIES                                                -->
+    <!-- ========================================================= -->
 
-    <!-- Java version used to compile the project -->
-    <java.version>21</java.version>
+    <properties>
 
-    <!-- Fully qualified name of the main class -->
-    <main.class>fr.univtln.bruno.demos.docker.App</main.class>
+        <!-- Java baseline -->
+        <java.version>25</java.version>
+        <main.class>fr.univtln.bruno.demos.docker.App</main.class>
 
-    <!-- Dependency versions -->
-    <junit.version>6.0.2</junit.version>
-    <slf4j.version>2.0.17</slf4j.version>
-    <logback.version>1.5.25</logback.version>
+        <!-- Reproducibility -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
 
-    <!-- Maven plugin versions -->
-    <maven.compiler.version>3.14.1</maven.compiler.version>
-    <maven.surefire.version>3.5.4</maven.surefire.version>
-    <maven.jar.version>3.5.0</maven.jar.version>
-    <maven.dependency.version>3.9.0</maven.dependency.version>
-    <versions.maven.version>2.21.0</versions.maven.version>
-    <native.image.plugin.version>0.11.4</native.image.plugin.version>
-    <maven.jlink.version>3.2.0</maven.jlink.version>
+        <!-- Versions -->
+        <versions.maven.version>2.21.0</versions.maven.version>
 
-    <!-- Maven Enforcer plugin version -->
-    <maven.enforcer.version>3.6.2</maven.enforcer.version>
+        <slf4j.version>2.0.18</slf4j.version>
+        <logback.version>1.5.34</logback.version>
+        <junit.version>6.1.0</junit.version>
 
-    <maven.clean.version>3.5.0</maven.clean.version>
-    <maven.install.version>3.1.4</maven.install.version>
-    <maven.site.version>3.21.0</maven.site.version>
-    <maven.resources.version>3.4.0</maven.resources.version>
-    <maven.deploy.version>3.1.4</maven.deploy.version>
+        <maven.compiler.version>3.15.0</maven.compiler.version>
+        <maven.surefire.version>3.5.6</maven.surefire.version>
+        <maven.dependency.version>3.11.0</maven.dependency.version>
+        <maven.jar.version>3.5.0</maven.jar.version>
 
-    <!-- Ensures reproducible builds (same timestamps) -->
-    <project.build.outputTimestamp>2024-06-01T00:00:00Z</project.build.outputTimestamp>
-  </properties>
+        <maven.enforcer.version>3.6.3</maven.enforcer.version>
+        <maven.jlink.version>3.2.0</maven.jlink.version>
 
-  <!--
-    Dependencies:
-    External libraries required by the project
-  -->
-  <dependencies>
+        <native.maven.plugin.version>0.11.4</native.maven.plugin.version>
+        <jib.version>3.5.1</jib.version>
 
-    <!-- JUnit 5: unit testing framework (only used for tests) -->
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <version>${junit.version}</version>
-      <scope>test</scope>
-    </dependency>
+        <!-- Container registry -->
+        <docker.registry>docker.io/brunoe</docker.registry>
+        <docker.image.name>${project.artifactId}</docker.image.name>
+        <docker.image.tag>${project.version}</docker.image.tag>
 
-    <!-- SLF4J: logging API (used in the code) -->
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-      <version>${slf4j.version}</version>
-    </dependency>
+    </properties>
 
-    <!-- Logback: logging implementation (used at runtime) -->
-    <dependency>
-      <groupId>ch.qos.logback</groupId>
-      <artifactId>logback-classic</artifactId>
-      <version>${logback.version}</version>
-      <scope>runtime</scope>
-    </dependency>
+    <!-- ========================================================= -->
+    <!-- DEPENDENCIES                                              -->
+    <!-- ========================================================= -->
 
-  </dependencies>
+    <dependencies>
 
-  <!--
-    Build configuration:
-    Defines how the project is compiled, tested, and packaged
-  -->
-  <build>
-    <pluginManagement>
-      <plugins>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-clean-plugin</artifactId>
-          <version>${maven.clean.version}</version>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-install-plugin</artifactId>
-          <version>${maven.install.version}</version>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-site-plugin</artifactId>
-          <version>${maven.site.version}</version>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-resources-plugin</artifactId>
-          <version>${maven.resources.version}</version>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-deploy-plugin</artifactId>
-          <version>${maven.deploy.version}</version>
-        </plugin>
-      </plugins>
-    </pluginManagement>
-    <plugins>
+        <!-- TEST -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
 
-      <!-- Java compilation plugin -->
-      <plugin>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>${maven.compiler.version}</version>
-        <configuration>
-          <!-- Compile using Java 21 -->
-          <release>${java.version}</release>
-          <!-- Keep method parameter names (useful for reflection) -->
-          <parameters>true</parameters>
-        </configuration>
-      </plugin>
+        <!-- LOGGING -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
 
-      <!-- Runs unit tests -->
-      <plugin>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>${maven.surefire.version}</version>
-      </plugin>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+            <scope>runtime</scope>
+        </dependency>
 
-      <!-- Plugin to check and update dependency versions -->
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>versions-maven-plugin</artifactId>
-        <version>${versions.maven.version}</version>
-        <configuration>
-          <!-- Custom rules for allowed versions -->
-          <rulesUri>https://bruno.univ-tln.fr/rules.xml</rulesUri>
-        </configuration>
-      </plugin>
+    </dependencies>
 
-      <!-- Maven Enforcer: enforce best-practice rules early in the build -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-enforcer-plugin</artifactId>
-        <version>${maven.enforcer.version}</version>
-        <executions>
-          <execution>
-            <id>enforce</id>
-            <goals>
-              <goal>enforce</goal>
-            </goals>
-            <configuration>
-              <rules>
-                <!-- Require a minimum Maven version -->
-                <requireMavenVersion>
-                  <version>[3.6.3,)</version>
-                </requireMavenVersion>
+    <!-- ========================================================= -->
+    <!-- BUILD                                                     -->
+    <!-- ========================================================= -->
 
-                <!-- Ensure the build uses the expected Java version -->
-                <requireJavaVersion>
-                  <version>[21,)</version>
-                </requireJavaVersion>
+    <build>
 
-                <!-- Catch dependency convergence issues -->
-                <dependencyConvergence />
+        <pluginManagement>
+            <plugins>
 
-                <!-- Enforce upper-bound dependency versions to avoid conflicts -->
-                <requireUpperBoundDeps />
+                <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven.compiler.version}</version>
+                    <configuration>
+                        <release>${java.version}</release>
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
 
-                <!-- Ensure plugins declare versions -->
-                <requirePluginVersions />
-              </rules>
-              <fail>true</fail>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
+                <plugin>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.version}</version>
+                </plugin>
 
-    </plugins>
-  </build>
+                <plugin>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>${maven.dependency.version}</version>
+                </plugin>
 
-  <!--
-    Profiles:
-    Optional build configurations activated with -P
-  -->
-  <profiles>
+                <plugin>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven.jar.version}</version>
+                </plugin>
 
-    <!-- Production profile: creates a runnable JAR with dependencies -->
-    <profile>
-      <id>prod</id>
-      <build>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>${maven.enforcer.version}</version>
+                </plugin>
+
+                <plugin>
+                    <groupId>com.google.cloud.tools</groupId>
+                    <artifactId>jib-maven-plugin</artifactId>
+                    <version>${jib.version}</version>
+                </plugin>
+
+            </plugins>
+        </pluginManagement>
+
         <plugins>
 
-          <!-- Copies runtime dependencies into target/libs -->
-          <plugin>
-            <artifactId>maven-dependency-plugin</artifactId>
-            <version>${maven.dependency.version}</version>
-            <executions>
-              <execution>
-                <id>copy-dependencies</id>
-                <phase>package</phase>
-                <goals>
-                  <goal>copy-dependencies</goal>
-                </goals>
+            <!-- compiler -->
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+
+            <!-- tests -->
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+            </plugin>
+
+            <!-- enforcer (minimal global rules) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>baseline</id>
+                        <phase>validate</phase>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[25,)</version>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.9,)</version>
+                                </requireMavenVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Plugin to check and update dependency versions -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>versions-maven-plugin</artifactId>
+                <version>${versions.maven.version}</version>
                 <configuration>
-                  <outputDirectory>${project.build.directory}/libs</outputDirectory>
-                  <includeScope>runtime</includeScope>
+                    <!-- Custom rules for allowed versions -->
+                    <rulesUri>https://bruno.univ-tln.fr/rules.xml</rulesUri>
                 </configuration>
-              </execution>
-            </executions>
-          </plugin>
-
-          <!-- Builds a JAR with a Main-Class and classpath -->
-          <plugin>
-            <artifactId>maven-jar-plugin</artifactId>
-            <version>${maven.jar.version}</version>
-            <configuration>
-              <archive>
-                <manifest>
-                  <!-- Entry point of the application -->
-                  <mainClass>${main.class}</mainClass>
-                  <!-- Adds classpath to the manifest -->
-                  <addClasspath>true</addClasspath>
-                  <classpathPrefix>libs/</classpathPrefix>
-                </manifest>
-              </archive>
-            </configuration>
-          </plugin>
+            </plugin>
 
         </plugins>
-      </build>
-    </profile>
 
-   <!-- Profil jlink -->
-    <profile>
-      <id>jlink</id>
+    </build>
 
-      <build>
-        <plugins>
+    <!-- ========================================================= -->
+    <!-- PROFILES                                                  -->
+    <!-- ========================================================= -->
 
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-jlink-plugin</artifactId>
-            <version>${maven.jlink.version}</version>
+    <profiles>
 
-            <executions>
-              <execution>
-                <id>jlink</id>
-                <goals>
-                  <goal>jlink</goal>
-                </goals>
-              </execution>
-            </executions>
+        <!-- ===================================================== -->
+        <!-- 1. JVM (JAR + libs/ + Dockerfile)                    -->
+        <!-- ===================================================== -->
 
-            <configuration>
+        <profile>
+            <id>jvm</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
 
-              <classifier>runtime-image</classifier>
+            <properties>
+                <build.target>jvm</build.target>
+            </properties>
 
-              <addModules>ALL-MODULE-PATH,java.naming,jdk.charsets</addModules>
+            <build>
+                <plugins>
 
-              <launcher>hello=fr.univtln.bruno.demos.docker/fr.univtln.bruno.demos.docker.App</launcher>
+                    <!-- EXPORT DEPENDENCIES (CRITICAL FOR DOCKER LAYERING) -->
+                    <plugin>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-deps</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>copy-dependencies</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${project.build.directory}/libs</outputDirectory>
+                                    <includeScope>runtime</includeScope>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
 
-              <!-- Optional but recommended -->
-              <compress>2</compress>
-              <stripDebug>true</stripDebug>
-              <noHeaderFiles>true</noHeaderFiles>
-              <noManPages>true</noManPages>
+                    <!-- THIN JAR ONLY -->
+                    <plugin>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <configuration>
+                            <archive>
+                                <manifest>
+                                    <mainClass>${main.class}</mainClass>
+                                    <addClasspath>true</addClasspath>
+                                    <classpathPrefix>libs/</classpathPrefix>
+                                </manifest>
+                            </archive>
+                        </configuration>
+                    </plugin>
 
-            </configuration>
-          </plugin>
+                </plugins>
+            </build>
+        </profile>
 
-        </plugins>
-      </build>
-    </profile>
+        <!-- ===================================================== -->
+        <!-- 2. JLINK (custom runtime image)                      -->
+        <!-- ===================================================== -->
 
-    <!-- Native profile: builds a GraalVM native executable -->
-    <profile>
-      <id>native</id>
-      <build>
-        <plugins>
+        <profile>
+            <id>jlink</id>
 
-          <plugin>
-            <groupId>org.graalvm.buildtools</groupId>
-            <artifactId>native-maven-plugin</artifactId>
-            <version>${native.image.plugin.version}</version>
-            <extensions>true</extensions>
-            <executions>
-              <execution>
-                <id>build-native</id>
-                <phase>package</phase>
-                <goals>
-                  <goal>compile-no-fork</goal>
-                </goals>
-              </execution>
-            </executions>
+            <properties>
+                <build.target>jlink</build.target>
+            </properties>
 
-            <!-- Native image configuration -->
-            <configuration>
-              <imageName>app</imageName>
-              <mainClass>${main.class}</mainClass>
-              <buildArgs>
-                <!-- No JVM fallback -->
-                <buildArg>--no-fallback</buildArg>
-                <!-- Static binary -->
-                <buildArg>--static</buildArg>
-                <!-- Use musl libc (Docker-friendly) -->
-                <buildArg>--libc=musl</buildArg>
-                <!-- Initialize logging libraries at build time -->
-                <buildArg>
-                  --initialize-at-build-time=org.slf4j,ch.qos.logback
-                </buildArg>
-              </buildArgs>
-            </configuration>
+            <build>
+                <plugins>
 
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
+                    <plugin>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>modules</id>
+                                <phase>package</phase>
+                                <goals><goal>copy-dependencies</goal></goals>
+                                <configuration>
+                                    <outputDirectory>${project.build.directory}/modules</outputDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
 
-  </profiles>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jlink-plugin</artifactId>
+                        <version>${maven.jlink.version}</version>
+
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals><goal>jlink</goal></goals>
+                            </execution>
+                        </executions>
+
+                        <configuration>
+                            <classifier>runtime-image</classifier>
+                            <addModules>ALL-MODULE-PATH</addModules>
+                            <stripDebug>true</stripDebug>
+                            <noManPages>true</noManPages>
+                            <noHeaderFiles>true</noHeaderFiles>
+                            <compress>zip-6</compress>
+                            <launcher>app=fr.univtln.bruno.demos.docker/${main.class}</launcher>
+                        </configuration>
+
+                    </plugin>
+
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- ===================================================== -->
+        <!-- 3. GRAALVM NATIVE                                    -->
+        <!-- ===================================================== -->
+
+        <profile>
+            <id>native</id>
+            <properties>
+                <build.target>native</build.target>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <version>${native.maven.plugin.version}</version>
+                        <extensions>true</extensions>
+                        <executions>
+                            <execution>
+                                <id>build-native</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <mainClass>${main.class}</mainClass>
+                            <imageName>app</imageName>
+                            <buildArgs>
+                                <buildArg>--no-fallback</buildArg>
+                                <buildArg>--initialize-at-run-time=org.slf4j,ch.qos.logback</buildArg>
+                            </buildArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>native-static</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <configuration>
+                            <buildArgs>
+                                <buildArg>--no-fallback</buildArg>
+                                <buildArg>--initialize-at-run-time=org.slf4j,ch.qos.logback</buildArg>
+                                <buildArg>--static</buildArg>
+                                <buildArg>--libc=musl</buildArg>
+                            </buildArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- ===================================================== -->
+        <!-- 4. JIB (OPTIONAL OCI BUILD WITHOUT DOCKERFILE)       -->
+        <!-- ===================================================== -->
+
+        <profile>
+            <id>jib</id>
+
+            <build>
+                <plugins>
+
+                    <plugin>
+                        <groupId>com.google.cloud.tools</groupId>
+                        <artifactId>jib-maven-plugin</artifactId>
+
+                        <configuration>
+                            <from>
+                                <image>eclipse-temurin:25-jre-noble</image>
+                            </from>
+
+                            <to>
+                                <image>${docker.registry}/${docker.image.name}</image>
+                                <tags>
+                                    <tag>${docker.image.tag}</tag>
+                                    <tag>jib</tag>
+                                </tags>
+                            </to>
+
+                            <container>
+                                <mainClass>${main.class}</mainClass>
+                                <user>1001:1001</user>
+                            </container>
+
+                        </configuration>
+
+                    </plugin>
+
+                </plugins>
+            </build>
+
+        </profile>
+
+        <!-- ===================================================== -->
+        <!-- 5. SECURITY SCAN (SCA)                               -->
+        <!-- ===================================================== -->
+
+        <profile>
+            <id>scan</id>
+
+            <build>
+                <plugins>
+
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <version>12.1.1</version>
+
+                        <executions>
+                            <execution>
+                                <goals><goal>check</goal></goals>
+                            </execution>
+                        </executions>
+
+                        <configuration>
+                            <failBuildOnCVSS>7</failBuildOnCVSS>
+                        </configuration>
+
+                    </plugin>
+
+                </plugins>
+            </build>
+
+        </profile>
+
+    </profiles>
 
 </project>

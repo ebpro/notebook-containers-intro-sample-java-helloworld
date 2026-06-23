@@ -1,62 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Simple script to build all Dockerfile* images and run them sequentially.
-# Usage: ./build_and_run_all.sh
-# Optionally set DOCKER command: DOCKER=podman ./build_and_run_all.sh
+# Build and run all Dockerfile* images automatically.
+# Tag is derived from filename:
+#   Dockerfile.30.cache -> javahello:30-cache
 
 DOCKER=${DOCKER:-docker}
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
-FILES=(
-  Dockerfile.01.mavenimage
-  Dockerfile.02.mavenimagestage
-  Dockerfile.03.dockercache
-  Dockerfile.05.manual
-  Dockerfile.06.jlink
-  Dockerfile.06b.jlink-alpine
-  Dockerfile.07.graalVM
-)
-
-TAGS=(
-  javahello:mavenimage
-  javahello:mavenimagestage
-  javahello:dockercache
-  javahello:manual
-  javahello:jlink
-  javahello:jlink-alpine
-  javahello:graalVM
-)
-
 echo "Using docker command: $DOCKER"
+echo
 
-for i in "${!FILES[@]}"; do
-  file=${FILES[$i]}
-  tag=${TAGS[$i]}
+# Collect Dockerfiles dynamically
+FILES=($(ls Dockerfile.* 2>/dev/null | sort || true))
 
-  if [ ! -f "$file" ]; then
-    echo "Skipping $file (not found)"
-    continue
-  fi
+if [ ${#FILES[@]} -eq 0 ]; then
+  echo "No Dockerfile.* found"
+  exit 1
+fi
+
+# Build and run
+for file in "${FILES[@]}"; do
+
+  # Extract suffix after "Dockerfile."
+  suffix="${file#Dockerfile.}"
+
+  # Convert to tag-friendly format (just in case)
+  tag_suffix=$(echo "$suffix" | tr '[:upper:]' '[:lower:]')
+
+  tag="javahello:${tag_suffix}"
 
   echo
   echo "=============================================="
   echo "Building $file -> $tag"
   echo "=============================================="
 
-  $DOCKER build -t "$tag" -f "$file" . || { echo "Build failed for $file"; exit 1; }
+  $DOCKER build -t "$tag" -f "$file" . \
+    || { echo "Build failed for $file"; exit 1; }
+
 done
 
 echo
 echo "All builds finished. Running images sequentially."
 
-for tag in "${TAGS[@]}"; do
+for file in "${FILES[@]}"; do
+  suffix="${file#Dockerfile.}"
+  tag="javahello:${suffix,,}"
+
   echo
   echo "--------------------------------"
   echo "Running $tag"
   echo "--------------------------------"
-  # Run each container; accept that some may exit quickly. Don't stop the whole script on non-zero exit.
+
   if ! $DOCKER run --rm "$tag"; then
     echo "Container $tag exited with non-zero status"
   fi

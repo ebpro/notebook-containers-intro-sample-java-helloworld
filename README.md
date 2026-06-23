@@ -4,9 +4,9 @@ Lightweight repository demonstrating multiple strategies to package a Java appli
 
 ## Contents
 
-- Dockerfiles: `Dockerfile.01.mavenimage`, `Dockerfile.02.mavenimagestage`, `Dockerfile.03.dockercache`, `Dockerfile.05.manual`, `Dockerfile.06.jlink`, `Dockerfile.06b.jlink-alpine`, `Dockerfile.07.graalVM`
-- Helper scripts: `entrypoint.sh`, `build_and_run_all.sh`, `benchmark.sh`
-- Maven project with profiles: `prod`, `jlink`, `native`
+- **Dockerfiles**: `Dockerfile.10.maven`, `Dockerfile.30.cache`, `Dockerfile.40.manual`, `Dockerfile.50.jlink`, `Dockerfile.51.jlink-alpine`, `Dockerfile.60.graalvm`, `Dockerfile.61.graalvm-static`
+- **Helper scripts**: `entrypoint.sh`, `build_and_run_all.sh`, `benchmark.sh`, `benchmark-full.sh`
+- **Maven project with profiles**: `prod`, `jlink`, `native`, `native-static`
 
 ## Prerequisites
 
@@ -19,29 +19,3 @@ Build and run all images sequentially (script uses `docker`):
 
 ```bash
 ./build_and_run_all.sh
-```
-
-Build a single image manually:
-
-```bash
-# build and run JVM multi-stage image
-docker build -t javahello:mavenimagestage -f Dockerfile.02.mavenimagestage .
-docker run --rm javahello:mavenimagestage
-
-# build jlink image
-docker build -t javahello:jlink -f Dockerfile.06.jlink .
-docker run --rm javahello:jlink
-```
-
-If you use Podman, replace `docker` by `podman` in the commands above.
-
-## Benchmark
-
-Run the included benchmark that measures build/runtime characteristics:
-
-```bash
-./benchmark.sh
-```
-
-## License
-MIT
