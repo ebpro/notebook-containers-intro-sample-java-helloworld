@@ -25,7 +25,7 @@ Build a single image manually:
 
 ```bash
 # build and run JVM multi-stage image
-docker build -t javahello:mavenimagestage -f Dockerfile.02.mavenimagestage .
+docker build -t javahello:mavenimagestage -f Dockerfile.02.stage .
 docker run --rm javahello:mavenimagestage
 
 # build jlink image

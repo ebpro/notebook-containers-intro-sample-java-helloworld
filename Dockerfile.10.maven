@@ -1,0 +1,52 @@
+# Base image with Maven and Java 25
+FROM maven:3.9.16-eclipse-temurin-25-noble
+
+# ------------------------------------------------------------
+# Environment (before switching user)
+# ------------------------------------------------------------
+WORKDIR /app
+
+ENV HOME=/home/appuser
+ENV MAVEN_CONFIG=/home/appuser/.m2
+ENV MAVEN_OPTS="-Dmaven.repo.local=/home/appuser/.m2"
+
+# Add metadata
+LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
+LABEL description="Java Hello World Application - Full Maven image (run as user)"
+
+# ------------------------------------------------------------
+# Create user + fix permissions
+# ------------------------------------------------------------
+RUN groupadd -r appgroup \
+ && useradd -r -u 1001 -g appgroup -m -d /home/appuser appuser \
+ && mkdir -p /home/appuser/.m2 \
+ && chown -R appuser:appgroup /home/appuser \
+ && chown -R appuser:appgroup /app
+
+# ------------------------------------------------------------
+# Copy Maven wrapper + dependencies first (cache layer)
+# ------------------------------------------------------------
+COPY --chown=appuser:appgroup .mvn/ .mvn
+COPY --chown=appuser:appgroup mvnw pom.xml ./
+
+USER appuser
+
+# Warm dependency cache (safe now as appuser owns .m2)
+RUN ./mvnw dependency:resolve
+
+# ------------------------------------------------------------
+# Copy source and build
+# ------------------------------------------------------------
+COPY --chown=appuser:appgroup src ./src
+
+RUN ./mvnw clean package -DskipTests -P jvm
+
+# ------------------------------------------------------------
+# Runtime command
+# ------------------------------------------------------------
+
+# Option 1: Maven execution (dev mode)
+# CMD ["./mvnw", "--quiet", "exec:java", "-Dexec.mainClass=fr.univtln.bruno.demos.docker.App"]
+
+# Option 2: JVM classpath (prod-ish alternative)
+CMD ["sh", "-c", "java -jar target/hello-world-*-SNAPSHOT.jar"]

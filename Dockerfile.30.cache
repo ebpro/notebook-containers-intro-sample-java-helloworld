@@ -1,0 +1,62 @@
+# ============================================================
+# Multi-stage build for Java application
+# BuildKit cache optimization version (Maven dependency cache)
+# ============================================================
+
+FROM maven:3.9.16-eclipse-temurin-25-noble AS stage-build
+
+WORKDIR /app
+
+# ------------------------------------------------------------
+# Maven wrapper + POM first (layer caching)
+# ------------------------------------------------------------
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw
+
+# ------------------------------------------------------------
+# Dependency cache (BuildKit)
+# ------------------------------------------------------------
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw --batch-mode dependency:go-offline
+
+# ------------------------------------------------------------
+# Source code
+# ------------------------------------------------------------
+COPY src ./src
+
+# ------------------------------------------------------------
+# Build (cached)
+# ------------------------------------------------------------
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw --batch-mode clean package -DskipTests -Pprod
+
+
+# ============================================================
+# Stage 2: Runtime
+# ============================================================
+FROM eclipse-temurin:25-jre-noble
+
+LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
+LABEL description="Java Hello World Application - BuildKit cache optimized"
+
+WORKDIR /myapp
+
+# ------------------------------------------------------------
+# Copy thin jar + dependencies (CONSISTENT with your build)
+# ------------------------------------------------------------
+COPY --from=stage-build /app/target/libs /myapp/libs
+COPY --from=stage-build /app/target/hello-world-*.jar /myapp/app.jar
+
+# ------------------------------------------------------------
+# Security
+# ------------------------------------------------------------
+RUN useradd -r -u 1001 -g root appuser
+USER appuser
+
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+# ------------------------------------------------------------
+# Run (classpath mode because you have libs/)
+# ------------------------------------------------------------
+ENTRYPOINT ["sh", "-c", "java -cp '/myapp/libs/*:/myapp/app.jar' fr.univtln.bruno.demos.docker.App"]

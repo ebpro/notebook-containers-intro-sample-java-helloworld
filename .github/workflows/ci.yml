@@ -53,12 +53,12 @@ jobs:
     strategy:
       matrix:
         image:
-          - { tag: "01", name: "mavenimage", file: "Dockerfile.01.mavenimage" }
-          - { tag: "02", name: "mavenimagestage", file: "Dockerfile.02.mavenimagestage" }
+          - { tag: "01", name: "mavenimage", file: "Dockerfile.10.maven" }
+          - { tag: "02", name: "mavenimagestage", file: "Dockerfile.02.stage" }
           - { tag: "03", name: "dockercache", file: "Dockerfile.03.dockercache" }
           - { tag: "05", name: "manual", file: "Dockerfile.05.manual" }
           - { tag: "06", name: "jlink", file: "Dockerfile.06.jlink" }
-          - { tag: "06b", name: "jlink-alpine", file: "Dockerfile.06b.jlink-alpine" }
+          - { tag: "06b", name: "jlink-alpine", file: "Dockerfile.06.jlink-alpine" }
           - { tag: "07", name: "graalvm", file: "Dockerfile.07.graalVM" }
 
     steps:

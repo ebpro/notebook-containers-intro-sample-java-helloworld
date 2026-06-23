@@ -1,0 +1,59 @@
+# ============================================================
+# Stage 1: Build (Maven + Temurin JDK 25)
+# Purpose: Generate a custom, stripped-down JRE via jlink
+# ============================================================
+FROM maven:3.9-eclipse-temurin-25-noble AS builder
+
+WORKDIR /workspace
+
+# ---- Maven Wrapper + Layout Configuration ----
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw
+
+# ---- Dependency Cache Layer ----
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw -q dependency:go-offline
+
+# ---- Source Code Application Layer ----
+COPY src ./src
+COPY entrypoint.sh ./entrypoint.sh
+
+# ---- Build Custom JRE & Package ----
+# Builds the custom runtime image using your defined 'jlink' Maven profile
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw clean package -Pjlink -DskipTests
+
+# ============================================================
+# Stage 2: Runtime (Ubuntu Noble)
+# Purpose: Minimal secure footprint running a custom JRE slice
+# ============================================================
+FROM ubuntu:noble
+
+LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
+LABEL description="Java Hello World Application with Custom JRE via jlink"
+
+WORKDIR /app
+
+# SOTA Security: Explicitly build directory layout for the non-root user
+RUN useradd -r -u 1001 -g root appuser && \
+    mkdir -p /app /jre && \
+    chown -R 1001:root /app /jre
+
+# ---- Deploy Artifacts with Correct Ownership ----
+# 1. Copy the jlink custom JRE target folder directly to the root /jre
+COPY --from=builder --chown=1001:root /workspace/target/maven-jlink/classifiers/runtime-image/ /jre/
+
+# 2. Copy your fat jar using the exact naming expected by your entrypoint.sh script
+COPY --from=builder --chown=1001:root /workspace/target/*-with-dependencies.jar /app/app.jar
+
+# 3. Copy the universal entrypoint script and ensure it is executable
+COPY --from=builder --chown=1001:root /workspace/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+USER 1001:root
+
+# Container optimization flags
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+ENTRYPOINT ["/app/entrypoint.sh"]

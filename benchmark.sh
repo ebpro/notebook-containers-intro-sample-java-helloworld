@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # ------------------------------------------------------------
 # Configuration
@@ -6,115 +7,111 @@
 BASE_NAME="javahello"
 PACKAGE_PATH="src/main/java/fr/univtln/bruno/demos/docker"
 
-declare -A BUILDS=(
-    ["01.mavenimage"]="mavenimage"
-    ["02.mavenimagestage"]="mavenimagestage"
-    ["03.dockercache"]="dockercache"
-    ["05.manual"]="manual"
-    ["06.jlink"]="jlink"
-    ["06b.jlink-alpine"]="jlink-alpine"
-    ["07.graalVM"]="graalvm"
-)
+echo -e "\n🚀 Benchmark: Build vs Runtime Efficiency\n"
 
-ORDER=(
-    "01.mavenimage"
-    "02.mavenimagestage"
-    "03.dockercache"
-    "05.manual"
-    "06.jlink"
-    "06b.jlink-alpine"
-    "07.graalVM"
-)
+echo "| Image | Cold | Warm | Incremental | Size | Peak RAM | Score |"
+echo "|------|------|------|-------------|------|----------|-------|"
 
-echo -e "\n🚀 Benchmark : Analyse de l'Efficience (Build vs Runtime)\n"
-echo "| Image Tag | Build Cold | Build Warm | Build Incr. | Size | Peak RAM | Footprint Index |"
-echo "|:----------|:-----------|:-----------|:------------|:-----|:---------|:----------------|"
+# ------------------------------------------------------------
+# Helper: SAME naming logic as build/run scripts
+# ------------------------------------------------------------
+get_tag() {
+  local file="$1"
+  local suffix="${file#Dockerfile.}"
+  suffix="${suffix//./-}"
+  echo "${BASE_NAME}:${suffix}"
+}
 
-for KEY in "${ORDER[@]}"; do
-    TAG=${BUILDS[$KEY]}
-    DOCKERFILE="Dockerfile.$KEY"
-    FULL_TAG="$BASE_NAME:$TAG"
+# ------------------------------------------------------------
+# Discover Dockerfiles automatically
+# ------------------------------------------------------------
+mapfile -t DOCKERFILES < <(ls Dockerfile.* 2>/dev/null | sort -V)
 
-    [ ! -f "$DOCKERFILE" ] && continue
+for file in "${DOCKERFILES[@]}"; do
 
-    # --------------------------------------------------------
-    # 1. COLD BUILD (no cache)
-    # --------------------------------------------------------
-    B_START=$(date +%s)
-    docker build --no-cache -t "$FULL_TAG" -f "$DOCKERFILE" . > /dev/null 2>&1
-    COLD_TIME="$(( $(date +%s) - B_START ))s"
+    TAG=$(get_tag "$file")
 
-    # --------------------------------------------------------
-    # 2. WARM BUILD (full cache)
-    # --------------------------------------------------------
-    B_START=$(date +%s)
-    docker build -t "$FULL_TAG" -f "$DOCKERFILE" . > /dev/null 2>&1
-    WARM_TIME="$(( $(date +%s) - B_START ))s"
+    echo "▶ Benchmarking $TAG"
 
-    # --------------------------------------------------------
-    # 3. INCREMENTAL BUILD (ServiceLoader – GraalVM aware)
-    # --------------------------------------------------------
-    FAKE_CLASS="Fake$(date +%s)"
-    FAKE_JAVA="$PACKAGE_PATH/$FAKE_CLASS.java"
+    # ========================================================
+    # 1. COLD BUILD
+    # ========================================================
+    COLD_START=$(date +%s)
+    docker build --no-cache -t "$TAG" -f "$file" . > /dev/null
+    COLD_TIME=$(( $(date +%s) - COLD_START ))
 
-    SPI_DIR="src/main/resources/META-INF/services"
-    SPI_FILE="$SPI_DIR/fr.univtln.bruno.demos.docker.Marker"
+    # ========================================================
+    # 2. WARM BUILD
+    # ========================================================
+    WARM_START=$(date +%s)
+    docker build -t "$TAG" -f "$file" . > /dev/null
+    WARM_TIME=$(( $(date +%s) - WARM_START ))
 
-    mkdir -p "$SPI_DIR"
+    # ========================================================
+    # 3. INCREMENTAL BUILD (isolated workspace)
+    # ========================================================
+    TMP_DIR=$(mktemp -d)
+    FAKE_CLASS="Fake$(date +%s%N)"
 
-    # Fake provider implémentant Marker
-    cat > "$FAKE_JAVA" <<EOF
+    mkdir -p "$TMP_DIR/src/main/java/fr/univtln/bruno/demos/docker"
+    mkdir -p "$TMP_DIR/src/main/resources/META-INF/services"
+
+    cat > "$TMP_DIR/src/main/java/fr/univtln/bruno/demos/docker/$FAKE_CLASS.java" <<EOF
 package fr.univtln.bruno.demos.docker;
 
 public class $FAKE_CLASS implements Marker {
-    @Override
-    public void touch() {
-        // noop
-    }
+    public void touch() {}
 }
 EOF
 
-    # Enregistrement SPI (force l'atteignabilité GraalVM)
-    echo "fr.univtln.bruno.demos.docker.$FAKE_CLASS" > "$SPI_FILE"
+    echo "fr.univtln.bruno.demos.docker.$FAKE_CLASS" \
+        > "$TMP_DIR/src/main/resources/META-INF/services/fr.univtln.bruno.demos.docker.Marker"
 
-    B_START=$(date +%s)
-    docker build -t "$FULL_TAG" -f "$DOCKERFILE" . > /dev/null 2>&1
-    INCR_TIME="$(( $(date +%s) - B_START ))s"
+    INCR_START=$(date +%s)
 
-    # Nettoyage (aucune trace persistante)
-    rm -f "$FAKE_JAVA" "$SPI_FILE"
-    rmdir "$SPI_DIR" 2>/dev/null
-    rmdir "src/main/resources/META-INF" 2>/dev/null
-    rmdir "src/main/resources" 2>/dev/null
+    docker build \
+      --no-cache \
+      -t "$TAG" \
+      -f "$file" \
+      "$TMP_DIR" > /dev/null
 
-    # --------------------------------------------------------
-    # 4. RUNTIME STATS (Peak RAM)
-    # --------------------------------------------------------
-    SIZE_STR=$(docker images --format "{{.Size}}" "$FULL_TAG")
-    CID=$(docker run -d "$FULL_TAG")
-    PEAK_MEM_RAW=0
+    INCR_TIME=$(( $(date +%s) - INCR_START ))
 
-    while [ "$(docker ps -q -f id=$CID)" ]; do
-        M_STR=$(docker stats --no-stream --format "{{.MemUsage}}" "$CID" | awk '{print $1}')
-        VAL=$(echo "$M_STR" | sed 's/[A-Za-z]//g')
+    rm -rf "$TMP_DIR"
 
-        if [[ -n "$VAL" ]] && (( $(echo "$VAL > $PEAK_MEM_RAW" | bc -l 2>/dev/null || echo 0) )); then
-            PEAK_MEM_RAW=$VAL
+    # ========================================================
+    # 4. RUNTIME METRICS
+    # ========================================================
+    SIZE_STR=$(docker images --format "{{.Size}}" "$TAG")
+
+    CID=$(docker run -d "$TAG" >/dev/null)
+
+    PEAK=0
+
+    while docker ps -q -f id="$CID" | grep -q .; do
+        MEM=$(docker stats --no-stream --format "{{.MemUsage}}" "$CID" | awk '{print $1}')
+        NUM=$(echo "$MEM" | sed 's/[^0-9.]//g')
+
+        if [[ -n "$NUM" ]]; then
+            PEAK=$(echo "$PEAK $NUM" | awk '{if ($2>$1) print $2; else print $1}')
         fi
+
         sleep 0.05
     done
 
-    docker rm -f "$CID" > /dev/null 2>&1
+    docker rm -f "$CID" > /dev/null 2>&1 || true
 
-    # --------------------------------------------------------
-    # 5. FOOTPRINT INDEX
-    # --------------------------------------------------------
-    SIZE_NUM=$(echo "$SIZE_STR" | sed 's/[A-Za-z]//g')
-    SCORE=$(echo "($PEAK_MEM_RAW * 3) + ($SIZE_NUM / 10)" | bc -l)
+    SIZE_NUM=$(echo "$SIZE_STR" | sed 's/[^0-9.]//g')
 
-    printf "| %-15s | %10s | %10s | %11s | %8s | %8.2f MiB | %15.1f |\n" \
+    SCORE=$(echo "$PEAK * 3 + $SIZE_NUM / 10" | bc -l)
+
+    # ========================================================
+    # 5. OUTPUT
+    # ========================================================
+    printf "| %-25s | %4ss | %4ss | %11ss | %6s | %7.2f MiB | %6.1f |\n" \
         "$TAG" "$COLD_TIME" "$WARM_TIME" "$INCR_TIME" \
-        "$SIZE_STR" "$PEAK_MEM_RAW" "$SCORE"
+        "$SIZE_STR" "$PEAK" "$SCORE"
+
 done
 
-echo -e "\n*Note : Footprint Index = (RAM × 3) + (Size / 10). Plus l'indice est faible, plus l'image est efficiente.*"
+echo -e "\n✔ Done. Lower score = better efficiency."

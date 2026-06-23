@@ -1,0 +1,35 @@
+# ============================================================
+# Stage 1: Build (GraalVM avec Toolchain Musl intégrée)
+# Purpose: Compiler le code Java en un binaire 100% statique avec musl
+# ============================================================
+FROM ghcr.io/graalvm/native-image-community:25-muslib AS builder
+
+WORKDIR /workspace
+
+# ---- Cache des dépendances Maven ----
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw
+
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw -q -Pnative-static dependency:go-offline
+
+# ---- Copie des sources et Compilation ----
+COPY src ./src
+
+# Utilisation du profil de compilation statique musl
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw -Pnative,native-static -DskipTests package
+
+# ============================================================
+# Stage 2: Runtime (Distroless STATIC)
+# Purpose: Le compromis parfait en production pour binaire musl
+# ============================================================
+FROM gcr.io/distroless/static-debian12:nonroot
+
+# Plus besoin de copier libz ! Tout est dans le binaire.
+# On profite de l'utilisateur 'nonroot' (65532) déjà créé par Google.
+COPY --from=builder --chown=65532:65532 /workspace/target/app /app
+
+USER 65532:65532
+ENTRYPOINT ["/app"]
