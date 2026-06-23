@@ -1,12 +1,12 @@
 # ------------------------------------------------------------
 # Stage: build
 # Purpose: manual build using SDKMAN to install Java and Maven, then compile the app
-# Base image: ubuntu:jammy (SDKMAN will install Java/Maven)
+# Base image: ubuntu:noble (SDKMAN will install Java/Maven)
 # Maven profile: -Pprod
 # Artifact: target/hello-world-*-SNAPSHOT.jar
 # Notes: BUILDER_UID/BUILDER_GID control file ownership; use --mount=type=cache for /home/builder/.m2
 # ------------------------------------------------------------
-FROM ubuntu:jammy AS stage-build
+FROM ubuntu:noble AS stage-build
 
 ARG JAVA_VERSION="25.0.3-tem"
 ARG MAVEN_VERSION="3.9.16"
@@ -71,11 +71,11 @@ RUN --mount=type=cache,target=/home/builder/.m2,uid=${BUILDER_UID},gid=${BUILDER
 # ------------------------------------------------------------
 # Stage: runtime
 # Purpose: provide runtime using Temurin JRE with same UID/GID as build user
-# Base image: eclipse-temurin:21.0.9_10-jre-noble
+# Base image: eclipse-temurin:25-jre-noble
 # Copies: /app/app.jar and /app/libs from build stage
 # Notes: create runtime user with same UID/GID to avoid permission issues
 # ------------------------------------------------------------
-FROM eclipse-temurin:21.0.9_10-jre-noble AS stage-runtime
+FROM eclipse-temurin:25-jre-noble AS stage-runtime
 
 ARG BUILDER_UID=2000
 ARG BUILDER_GID=2000
