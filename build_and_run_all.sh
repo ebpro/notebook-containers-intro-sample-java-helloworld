@@ -1,69 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Simple script to build all Dockerfile* images and run them sequentially.
+# Usage: ./build_and_run_all.sh
+# Optionally set DOCKER command: DOCKER=podman ./build_and_run_all.sh
+
 DOCKER=${DOCKER:-docker}
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
-BASE_IMAGE_NAME="javahello"
+FILES=(
+  Dockerfile.01.mavenimage
+  Dockerfile.02.mavenimagestage
+  Dockerfile.03.dockercache
+  Dockerfile.05.manual
+  Dockerfile.06.jlink
+  Dockerfile.06b.jlink-alpine
+  Dockerfile.07.graalVM
+)
+
+TAGS=(
+  javahello:01
+  javahello:02
+  javahello:03
+  javahello:05
+  javahello:06
+  javahello:06b
+  javahello:07
+)
 
 echo "Using docker command: $DOCKER"
 
-# ------------------------------------------------------------
-# Discover all Dockerfiles dynamically
-# ------------------------------------------------------------
-mapfile -t FILES < <(find . -maxdepth 1 -type f -name "Dockerfile.*" | sort)
+for i in "${!FILES[@]}"; do
+  file=${FILES[$i]}
+  tag=${TAGS[$i]}
 
-if [ ${#FILES[@]} -eq 0 ]; then
-  echo "No Dockerfile.* found"
-  exit 1
-fi
-
-# ------------------------------------------------------------
-# BUILD PHASE
-# ------------------------------------------------------------
-for file in "${FILES[@]}"; do
-  file="${file#./}"
-
-  [ ! -f "$file" ] && continue
-
-  # consistent tag generation
-  suffix="${file#Dockerfile.}"
-  suffix="${suffix//./-}"
-  tag="${BASE_IMAGE_NAME}:${suffix}"
+  if [ ! -f "$file" ]; then
+    echo "Skipping $file (not found)"
+    continue
+  fi
 
   echo
   echo "=============================================="
   echo "Building $file -> $tag"
   echo "=============================================="
 
-  $DOCKER build -t "$tag" -f "$file" . || {
-    echo "Build failed for $file"
-    exit 1
-  }
+  $DOCKER build -t "$tag" -f "$file" . || { echo "Build failed for $file"; exit 1; }
 done
 
 echo
 echo "All builds finished. Running images sequentially."
 
-# ------------------------------------------------------------
-# RUN PHASE
-# ------------------------------------------------------------
-for file in "${FILES[@]}"; do
-  file="${file#./}"
-
-  [ ! -f "$file" ] && continue
-
-  suffix="${file#Dockerfile.}"
-  suffix="${suffix//./-}"
-  tag="${BASE_IMAGE_NAME}:${suffix}"
-
+for tag in "${TAGS[@]}"; do
   echo
   echo "--------------------------------"
   echo "Running $tag"
   echo "--------------------------------"
-
-  $DOCKER run --rm "$tag" || true
+  # Run each container; accept that some may exit quickly. Don't stop the whole script on non-zero exit.
+  if ! $DOCKER run --rm "$tag"; then
+    echo "Container $tag exited with non-zero status"
+  fi
 done
 
 echo
