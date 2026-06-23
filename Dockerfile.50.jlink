@@ -1,54 +1,65 @@
 # ============================================================
-# Stage 1: Build (Maven + Temurin JDK 25)
-# Purpose: Generate a custom, stripped-down JRE via jlink
+# Stage 1: Build Environment
+# Purpose: Leverage Maven to compile code and "slice" a
+#          custom JRE using the jlink toolchain.
 # ============================================================
-FROM maven:3.9-eclipse-temurin-25-noble AS builder
+FROM maven:3.9.16-eclipse-temurin-25-noble AS builder
 
 WORKDIR /workspace
 
-# ---- Maven Wrapper + Layout Configuration ----
+# ------------------------------------------------------------
+# Layer 1: Build Infrastructure
+# ------------------------------------------------------------
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw
 
-# ---- Dependency Cache Layer ----
+# ------------------------------------------------------------
+# Layer 2: Dependency Caching
+# ------------------------------------------------------------
+# Warm the Maven cache to speed up subsequent builds
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -q dependency:go-offline
 
-# ---- Source Code Application Layer ----
+# ------------------------------------------------------------
+# Layer 3: Application Build & JRE Slicing
+# ------------------------------------------------------------
 COPY src ./src
 
-# ---- Build Custom JRE & Package ----
-# Builds the custom runtime image using your defined 'jlink' Maven profile
+# The 'jlink' profile triggers the maven-jlink-plugin, which
+# inspects the module-info and builds a minimal, custom runtime
+# image that contains only the required JDK modules.
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw clean verify -Pjlink -DskipTests
 
+
 # ============================================================
-# Stage 2: Runtime (Ubuntu Noble)
-# Purpose: Minimal secure footprint running a custom JRE slice
+# Stage 2: Runtime Environment (Ubuntu Noble)
+# Purpose: Deploy the custom, modularized Java runtime.
 # ============================================================
 FROM ubuntu:noble
 
 LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
 LABEL description="Java Hello World Application with Custom JRE via jlink"
 
-WORKDIR /app
+# Security: Create a non-privileged user to run the application
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser && \
+    mkdir -p /jre && chown -R appuser:appgroup /jre
 
-# SOTA Security: Explicitly build directory layout for the non-root user
-RUN useradd -r -u 1001 -g root appuser && \
-    mkdir -p /app /jre && \
-    chown -R 1001:root /app /jre
+# ------------------------------------------------------------
+# Deployment: Copy the custom runtime
+# ------------------------------------------------------------
+# The custom JRE includes the application logic, dependencies,
+# and the native launcher ('app') generated during the build.
+COPY --from=builder --chown=appuser:appgroup /workspace/target/maven-jlink/classifiers/runtime-image/ /jre/
 
-# ---- Deploy Artifacts with Correct Ownership ----
-# 1. Copy the jlink custom JRE target folder directly to the root /jre
-COPY --from=builder --chown=1001:root /workspace/target/maven-jlink/classifiers/runtime-image/ /jre/
+USER appuser
 
-# 2. Copy your thin jar and libs using the exact naming expected by your entrypoint
-COPY --from=builder --chown=1001:root /workspace/target/*-with-dependencies.jar /app/app.jar
-
-USER 1001:root
-
-# Container optimization flags (Use JAVA_TOOL_OPTIONS so the jlink launcher picks it up automatically)
+# JVM Container Ergonomics: JAVA_TOOL_OPTIONS is natively parsed by
+# the JRE, ensuring resource limits are applied to the custom runtime.
 ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
+# Execution: Invoke the native binary created by jlink.
+# No 'java -jar' command is needed, as the application is now a
+# self-contained modular executable.
 ENTRYPOINT ["/jre/bin/app"]

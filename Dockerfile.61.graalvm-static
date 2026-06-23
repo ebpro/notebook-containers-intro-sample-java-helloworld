@@ -1,37 +1,55 @@
 # ============================================================
-# Stage 1: Build (GraalVM avec Toolchain Musl intégrée)
-# Purpose: Compiler le code Java en un binaire 100% statique avec musl
+# Stage 1: Build Environment (GraalVM + Musl Toolchain)
+# Purpose: Compile Java source into a 100% statically linked
+#          native Linux binary using the musl libc.
 # ============================================================
 FROM ghcr.io/graalvm/native-image-community:25-muslib AS builder
 
 WORKDIR /workspace
 
-# ---- Cache des dépendances Maven ----
+# ------------------------------------------------------------
+# Layer 1: Build Infrastructure
+# ------------------------------------------------------------
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw
 
+# ------------------------------------------------------------
+# Layer 2: Dependency Caching (BuildKit)
+# ------------------------------------------------------------
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -q -Pnative-static dependency:go-offline
 
-# ---- Copie des sources et Compilation ----
+# ------------------------------------------------------------
+# Layer 3: Static Native Compilation
+# ------------------------------------------------------------
+# We trigger the 'native' and 'native-static' profiles. The latter
+# forces GraalVM to compile against 'musl' instead of 'glibc',
+# resulting in a binary that requires no external system libraries.
 COPY src ./src
-
-# Utilisation du profil de compilation statique musl
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -Pnative,native-static -DskipTests package
 
+
 # ============================================================
-# Stage 2: Runtime (Distroless STATIC)
-# Purpose: Le compromis parfait en production pour binaire musl
+# Stage 2: Runtime Environment (Distroless Static)
+# Purpose: The pinnacle of production security.
 # ============================================================
+# Distroless 'static' contains no shell, no package manager, and
+# no standard Linux utilities. It is the minimal runtime possible
+# for a statically linked binary.
 FROM gcr.io/distroless/static-debian12:nonroot
 
-# Plus besoin de copier libz ! Tout est dans le binaire.
-# On profite de l'utilisateur 'nonroot' (65532) déjà créé par Google.
+LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
+LABEL description="Java Hello World Application with GraalVM Native Image statically linked against musl"
+
+# Copy the self-contained native binary. Since it is statically linked,
+# no system libraries (like glibc or libz) are required at runtime.
 COPY --from=builder --chown=65532:65532 /workspace/target/app /app
 
+# Distroless 'nonroot' user ID is predefined as 65532.
 USER 65532:65532
-# We CANNOT use ENV JAVA_TOOL_OPTIONS here.
-# SubstrateVM requires memory flags to be passed directly as arguments.
+
+# Execution: The binary is completely self-contained.
+# It manages its own memory and execution context.
 ENTRYPOINT ["/app"]

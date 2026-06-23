@@ -1,8 +1,11 @@
-# Base image with Maven and Java 25
+# ============================================================
+# Stage: Build & Run (Single-stage Maven)
+# Purpose: Baseline development environment for Java 25
+# ============================================================
 FROM maven:3.9.16-eclipse-temurin-25-noble
 
 # ------------------------------------------------------------
-# Environment (before switching user)
+# Build Environment Configuration
 # ------------------------------------------------------------
 WORKDIR /app
 
@@ -10,45 +13,46 @@ ENV HOME=/home/appuser
 ENV MAVEN_CONFIG=/home/appuser/.m2
 ENV MAVEN_OPTS="-Dmaven.repo.local=/home/appuser/.m2"
 
-# Add metadata
 LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
-LABEL description="Java Hello World Application - Full Maven image (run as user)"
+LABEL description="Java Hello World Application - Full Maven baseline"
 
 # ------------------------------------------------------------
-# Create user + fix permissions
+# Security: Unprivileged user creation
 # ------------------------------------------------------------
 RUN groupadd -r appgroup \
- && useradd -r -u 1001 -g appgroup -m -d /home/appuser appuser \
+ && useradd -r -g appgroup -m -d /home/appuser appuser \
  && mkdir -p /home/appuser/.m2 \
  && chown -R appuser:appgroup /home/appuser \
  && chown -R appuser:appgroup /app
 
 # ------------------------------------------------------------
-# Copy Maven wrapper + dependencies first (cache layer)
+# Layer 1: Dependency Caching
 # ------------------------------------------------------------
+# Copying only the wrapper and POM allows Docker to cache
+# dependencies independently of source code changes.
 COPY --chown=appuser:appgroup .mvn/ .mvn
 COPY --chown=appuser:appgroup mvnw pom.xml ./
 
 USER appuser
 
-# Warm dependency cache (safe now as appuser owns .m2)
+# Pre-resolve project dependencies to optimize build time
 RUN ./mvnw dependency:resolve
 
 # ------------------------------------------------------------
-# Copy source and build
+# Layer 2: Source Compilation
 # ------------------------------------------------------------
 COPY --chown=appuser:appgroup src ./src
 
-RUN ./mvnw clean package -DskipTests -P jvm
+# Build artifact using the 'jvm' profile (configured for thin JAR)
+RUN ./mvnw clean package -DskipTests -Pjvm
 
 # ------------------------------------------------------------
-# Runtime command
+# Execution
 # ------------------------------------------------------------
 
-# Container optimization flags (Use JAVA_TOOL_OPTIONS so the jlink launcher picks it up automatically)
+# Configure JVM container ergonomics for resource management
 ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
-# Run the application explicitly
-# (This works flawlessly because -Pjvm profile configures the maven-jar-plugin
-# to automatically add the libs/ prefix to the JAR Manifest classpath)
+# Explicitly invoke the JAR. The 'jvm' profile's Manifest
+# automatically links to external dependencies in the /libs folder.
 ENTRYPOINT ["java", "-jar", "/app/target/hello-world-0.1.0-SNAPSHOT.jar"]

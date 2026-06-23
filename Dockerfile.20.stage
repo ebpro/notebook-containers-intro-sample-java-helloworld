@@ -1,37 +1,45 @@
 # ============================================================
 # Stage 1: Build environment
 # ============================================================
+# Uses the full Maven SDK to compile the source code into a thin JAR
 FROM maven:3.9.16-eclipse-temurin-25-noble AS stage-build
 WORKDIR /app
 
-# Copy POM first to leverage Docker cache for dependencies
+# Cache dependency layer: Copying only the wrapper and POM
+# allows Docker to skip downloading dependencies if they haven't changed.
 COPY .mvn/ .mvn
 COPY mvnw pom.xml ./
 RUN ./mvnw dependency:go-offline
 
-# Copy source code and build the application
+# Copy source code and perform a clean build
 COPY src ./src
-# Aligned with the exact profile name in the updated pom.xml
+# Build using the 'jvm' profile (configured to output a thin JAR)
 RUN ./mvnw clean package -DskipTests -Pjvm
 
 # ============================================================
 # Stage 2: Runtime environment
 # ============================================================
+# Uses the JRE-only base image to minimize the security attack surface
 FROM eclipse-temurin:25-jre-noble
 
 LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
 LABEL description="Java Hello World Application - multi-stage"
 
-# Create a non-root user/group for security BEFORE copying files
-RUN groupadd -r appgroup && useradd -r -u 1001 -g appgroup appuser
+# Security: Create an unprivileged user/group to run the application
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser && \
+    mkdir -p /app && chown -R appuser:appgroup /app
 
-# Copy only the built jar and libs, strictly enforcing non-root ownership
+# Copy artifacts from the builder stage:
+# Only the thin JAR and external dependencies are required at runtime.
 COPY --from=stage-build --chown=appuser:appgroup /app/target/libs /app/libs
 COPY --from=stage-build --chown=appuser:appgroup /app/target/hello-world-*.jar /app/app.jar
 
 USER appuser
 
-# Configure Java options (JAVA_TOOL_OPTIONS is automatically read by the JVM)
+# Configure JVM ergonomics for containerized environments:
+# JAVA_TOOL_OPTIONS is natively parsed by the JVM at startup,
+# ensuring memory limits are respected without needing shell script injection.
 ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
+# Execute the application
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
