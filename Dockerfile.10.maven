@@ -45,8 +45,10 @@ RUN ./mvnw clean package -DskipTests -P jvm
 # Runtime command
 # ------------------------------------------------------------
 
-# Option 1: Maven execution (dev mode)
-# CMD ["./mvnw", "--quiet", "exec:java", "-Dexec.mainClass=fr.univtln.bruno.demos.docker.App"]
+# Container optimization flags (Use JAVA_TOOL_OPTIONS so the jlink launcher picks it up automatically)
+ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
-# Option 2: JVM classpath (prod-ish alternative)
-CMD ["sh", "-c", "java -jar target/hello-world-*-SNAPSHOT.jar"]
+# Run the application explicitly
+# (This works flawlessly because -Pjvm profile configures the maven-jar-plugin
+# to automatically add the libs/ prefix to the JAR Manifest classpath)
+ENTRYPOINT ["java", "-jar", "/app/target/hello-world-0.1.0-SNAPSHOT.jar"]

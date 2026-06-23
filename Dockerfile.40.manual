@@ -94,13 +94,10 @@ COPY --from=stage-build /app/target/libs /app/libs
 
 RUN chown -R appuser:appuser /app
 
-# Install generic entrypoint script and make executable
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh || true
-
 USER appuser
 ENV HOME=/home/appuser
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
-# Use generic exec-form entrypoint
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# Container optimization flags (Use JAVA_TOOL_OPTIONS so the jlink launcher picks it up automatically)
+ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

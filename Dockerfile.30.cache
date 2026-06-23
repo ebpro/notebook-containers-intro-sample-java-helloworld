@@ -29,7 +29,7 @@ COPY src ./src
 # Build (cached)
 # ------------------------------------------------------------
 RUN --mount=type=cache,target=/root/.m2 \
-    ./mvnw --batch-mode clean package -DskipTests -Pprod
+    ./mvnw --batch-mode clean package -DskipTests -Pjvm
 
 
 # ============================================================
@@ -45,8 +45,8 @@ WORKDIR /myapp
 # ------------------------------------------------------------
 # Copy thin jar + dependencies (CONSISTENT with your build)
 # ------------------------------------------------------------
-COPY --from=stage-build /app/target/libs /myapp/libs
-COPY --from=stage-build /app/target/hello-world-*.jar /myapp/app.jar
+COPY --from=stage-build /app/target/libs /app/libs
+COPY --from=stage-build /app/target/hello-world-*.jar /app/app.jar
 
 # ------------------------------------------------------------
 # Security
@@ -54,9 +54,11 @@ COPY --from=stage-build /app/target/hello-world-*.jar /myapp/app.jar
 RUN useradd -r -u 1001 -g root appuser
 USER appuser
 
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
-
 # ------------------------------------------------------------
 # Run (classpath mode because you have libs/)
 # ------------------------------------------------------------
-ENTRYPOINT ["sh", "-c", "java -cp '/myapp/libs/*:/myapp/app.jar' fr.univtln.bruno.demos.docker.App"]
+
+# Container optimization flags (Use JAVA_TOOL_OPTIONS so the jlink launcher picks it up automatically)
+ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

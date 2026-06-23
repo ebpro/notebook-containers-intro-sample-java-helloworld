@@ -285,21 +285,6 @@
 
             <build>
                 <plugins>
-
-                    <plugin>
-                        <artifactId>maven-dependency-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>modules</id>
-                                <phase>package</phase>
-                                <goals><goal>copy-dependencies</goal></goals>
-                                <configuration>
-                                    <outputDirectory>${project.build.directory}/modules</outputDirectory>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-jlink-plugin</artifactId>
@@ -307,23 +292,28 @@
 
                         <executions>
                             <execution>
-                                <phase>package</phase>
+                                <phase>verify</phase>
                                 <goals><goal>jlink</goal></goals>
                             </execution>
                         </executions>
 
                         <configuration>
+                            <modulePaths>
+                                <modulePath>${project.build.directory}/${project.build.finalName}.jar</modulePath>
+                            </modulePaths>
+
+                            <addModules>
+                                <addModule>fr.univtln.bruno.demos.docker</addModule>
+                            </addModules>
+
                             <classifier>runtime-image</classifier>
-                            <addModules>ALL-MODULE-PATH</addModules>
                             <stripDebug>true</stripDebug>
                             <noManPages>true</noManPages>
                             <noHeaderFiles>true</noHeaderFiles>
                             <compress>zip-6</compress>
                             <launcher>app=fr.univtln.bruno.demos.docker/${main.class}</launcher>
                         </configuration>
-
                     </plugin>
-
                 </plugins>
             </build>
         </profile>

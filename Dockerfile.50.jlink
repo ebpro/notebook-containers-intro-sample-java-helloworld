@@ -17,12 +17,11 @@ RUN --mount=type=cache,target=/root/.m2 \
 
 # ---- Source Code Application Layer ----
 COPY src ./src
-COPY entrypoint.sh ./entrypoint.sh
 
 # ---- Build Custom JRE & Package ----
 # Builds the custom runtime image using your defined 'jlink' Maven profile
 RUN --mount=type=cache,target=/root/.m2 \
-    ./mvnw clean package -Pjlink -DskipTests
+    ./mvnw clean verify -Pjlink -DskipTests
 
 # ============================================================
 # Stage 2: Runtime (Ubuntu Noble)
@@ -44,16 +43,12 @@ RUN useradd -r -u 1001 -g root appuser && \
 # 1. Copy the jlink custom JRE target folder directly to the root /jre
 COPY --from=builder --chown=1001:root /workspace/target/maven-jlink/classifiers/runtime-image/ /jre/
 
-# 2. Copy your fat jar using the exact naming expected by your entrypoint.sh script
+# 2. Copy your thin jar and libs using the exact naming expected by your entrypoint
 COPY --from=builder --chown=1001:root /workspace/target/*-with-dependencies.jar /app/app.jar
-
-# 3. Copy the universal entrypoint script and ensure it is executable
-COPY --from=builder --chown=1001:root /workspace/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
 
 USER 1001:root
 
-# Container optimization flags
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+# Container optimization flags (Use JAVA_TOOL_OPTIONS so the jlink launcher picks it up automatically)
+ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/jre/bin/app"]

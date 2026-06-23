@@ -1,0 +1,37 @@
+# ============================================================
+# Stage 1: Build environment
+# ============================================================
+FROM maven:3.9.16-eclipse-temurin-25-noble AS stage-build
+WORKDIR /app
+
+# Copy POM first to leverage Docker cache for dependencies
+COPY .mvn/ .mvn
+COPY mvnw pom.xml ./
+RUN ./mvnw dependency:go-offline
+
+# Copy source code and build the application
+COPY src ./src
+# Aligned with the exact profile name in the updated pom.xml
+RUN ./mvnw clean package -DskipTests -Pjvm
+
+# ============================================================
+# Stage 2: Runtime environment
+# ============================================================
+FROM eclipse-temurin:25-jre-noble
+
+LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
+LABEL description="Java Hello World Application - multi-stage"
+
+# Create a non-root user/group for security BEFORE copying files
+RUN groupadd -r appgroup && useradd -r -u 1001 -g appgroup appuser
+
+# Copy only the built jar and libs, strictly enforcing non-root ownership
+COPY --from=stage-build --chown=appuser:appgroup /app/target/libs /app/libs
+COPY --from=stage-build --chown=appuser:appgroup /app/target/hello-world-*.jar /app/app.jar
+
+USER appuser
+
+# Configure Java options (JAVA_TOOL_OPTIONS is automatically read by the JVM)
+ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

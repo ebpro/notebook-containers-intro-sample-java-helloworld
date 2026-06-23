@@ -32,4 +32,6 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder --chown=65532:65532 /workspace/target/app /app
 
 USER 65532:65532
+# We CANNOT use ENV JAVA_TOOL_OPTIONS here.
+# SubstrateVM requires memory flags to be passed directly as arguments.
 ENTRYPOINT ["/app"]
