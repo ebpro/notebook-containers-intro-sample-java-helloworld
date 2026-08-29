@@ -44,7 +44,7 @@ jobs:
   build-docker:
     name: Build & smoke-test images (self-hosted, matrix)
     needs: validate
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ebpro-org
     if: >
       github.event_name == 'push'
       || (github.event_name == 'pull_request'
@@ -96,7 +96,7 @@ jobs:
 
   publish:
     name: Publish images (tags only)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ebpro-org
     needs: build-docker
     if: startsWith(github.ref, 'refs/tags/')
 
