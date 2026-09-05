@@ -1,0 +1,28 @@
+name: SonarQube
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['**']
+  push:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonarqube-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonarqube:
+    uses: ebpro/ci-java/.github/workflows/sonarqube-maven.yml@v1.0.0
+    with:
+      java-version: '25'
+      sonar-main-branch: ${{ vars.SONAR_MAIN_BRANCH || 'develop' }}
+      sonar-host-url: ${{ vars.SONAR_HOST_URL }}
+      sonar-public-url: ${{ vars.SONAR_PUBLIC_URL }}
+      sonar-runner: ${{ vars.SONAR_RUNNER }}
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_URL: ${{ secrets.SONAR_URL }}

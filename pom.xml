@@ -78,6 +78,10 @@
         <native.maven.plugin.version>0.11.4</native.maven.plugin.version>
         <jib.version>3.5.1</jib.version>
 
+        <!-- SonarQube -->
+        <sonar.maven.plugin.version>5.5.0.6356</sonar.maven.plugin.version>
+        <jacoco.maven.plugin.version>0.8.14</jacoco.maven.plugin.version>
+
         <!-- Container registry -->
         <docker.registry>docker.io/brunoe</docker.registry>
         <docker.image.name>${project.artifactId}</docker.image.name>
@@ -442,6 +446,55 @@
                             <failBuildOnCVSS>7</failBuildOnCVSS>
                         </configuration>
 
+                    </plugin>
+
+                </plugins>
+            </build>
+
+        </profile>
+
+        <!-- ===================================================== -->
+        <!-- 6. SONARQUBE (STATIC ANALYSIS + COVERAGE)            -->
+        <!-- ===================================================== -->
+
+        <profile>
+            <id>sonar</id>
+
+            <properties>
+                <sonar.host.url>${SONAR_URL}</sonar.host.url>
+                <sonar.token>${SONAR_TOKEN}</sonar.token>
+            </properties>
+
+            <build>
+                <plugins>
+
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <version>${jacoco.maven.plugin.version}</version>
+
+                        <executions>
+                            <execution>
+                                <id>prepare-agent</id>
+                                <goals><goal>prepare-agent</goal></goals>
+                            </execution>
+                            <execution>
+                                <id>report</id>
+                                <goals><goal>report</goal></goals>
+                                <configuration>
+                                    <formats>
+                                        <format>XML</format>
+                                    </formats>
+                                </configuration>
+                            </execution>
+                        </executions>
+
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.sonarsource.scanner.maven</groupId>
+                        <artifactId>sonar-maven-plugin</artifactId>
+                        <version>${sonar.maven.plugin.version}</version>
                     </plugin>
 
                 </plugins>
