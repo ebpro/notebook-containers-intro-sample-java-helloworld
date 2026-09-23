@@ -1,6 +1,7 @@
 name: CI (self-hosted-safe)
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - 'feature/*'
