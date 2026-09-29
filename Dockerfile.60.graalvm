@@ -28,6 +28,10 @@ RUN --mount=type=cache,target=/root/.m2 \
 # GraalVM performs "Reachability Analysis" to build a closed-world
 # native binary. This process is memory-intensive and relies
 # on the cached M2 repository.
+# Cap the native-image build heap so the CI render stays within the
+# runner memory budget (large pool: 24 Gi limit). The sample is a small
+# app, so 12 Gi is a comfortable ceiling for the build JVM.
+ENV GRAALVM_IMAGE_JAVA_OPTIONS=-Xmx12G
 COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -Pnative -DskipTests package
