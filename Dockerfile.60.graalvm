@@ -1,61 +1,53 @@
-# ============================================================
-# Stage 1: Build Environment (GraalVM Native Image)
-# Purpose: Compile Java source into a native Linux binary
-#          linked against glibc.
-# ============================================================
+# syntax=docker/dockerfile:1
+
+# Layer 1 — GraalVM Native Image toolchain
+# ============================================================================
+# GraalVM + native-image (the "native" toolchain, installed on top of the JDK)
 ARG GRAALVM_VERSION=25
 FROM ghcr.io/graalvm/native-image-community:${GRAALVM_VERSION} AS builder
-
 WORKDIR /workspace
 
-# ------------------------------------------------------------
-# Layer 1: Build Infrastructure
-# ------------------------------------------------------------
+# Maven wrapper + POM first (re-uses the /root/.m2 cache for dependency download)
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw
-
-# ------------------------------------------------------------
-# Layer 2: Dependency Caching (BuildKit)
-# ------------------------------------------------------------
-# Persist the local M2 repository to avoid redundant downloads.
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -q -Pnative dependency:go-offline
 
-# ------------------------------------------------------------
-# Layer 3: Native Compilation
-# ------------------------------------------------------------
-# GraalVM performs "Reachability Analysis" to build a closed-world
-# native binary. This process is memory-intensive and relies
-# on the cached M2 repository.
-# Cap the native-image build heap so the CI render stays within the
-# runner memory budget (large pool: 24 Gi limit). The sample is a small
-# app, so 12 Gi is a comfortable ceiling for the build JVM.
-ENV GRAALVM_IMAGE_JAVA_OPTIONS=-Xmx12G
+# Cap the native-image build heap so the CI render stays within the runner
+# memory budget (large pool: 24 Gi cgroup limit). JAVA_TOOL_OPTIONS is read by
+# every JVM in the build (maven + native-image analysis); -Xmx8G leaves headroom
+# for the native compiler + GC + runtime within the limit.
+ENV JAVA_TOOL_OPTIONS=-Xmx8G
 COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -Pnative -DskipTests package
 
+# Layer 2 — minimal runtime
+FROM gcr.io/distroless/base-debian12:nonroot AS runtime
+WORKDIR /workspace
 
-# ============================================================
-# Stage 2: Runtime Environment (Distroless)
-# Purpose: Minimal secure footprint using a Distroless base.
-# ============================================================
-# We use Distroless because it contains no shell, package manager,
-# or OS utilities, drastically reducing the potential attack surface.
-FROM gcr.io/distroless/base-debian12:nonroot
+# Copy the compiled native executable from the builder stage
+COPY --from=builder /workspace/target/*-runner /app
 
-LABEL maintainer="Emmanuel Bruno <emmanuel.bruno@univ-tln.fr>"
-LABEL description="Java Hello World Application with GraalVM Native Image linked against glibc"
-
-# Copy the native binary and required system libraries from the build stage.
-# Native images linked against glibc require specific shared libraries.
-COPY --from=builder --chown=65532:65532 /workspace/target/app /app
-COPY --from=builder /usr/lib64/libz.so.1 /lib/x86_64-linux-gnu/libz.so.1
-
-# Distroless 'nonroot' user ID is 65532.
-USER 65532:65532
-
-# Execution: The binary is self-contained and does not require a JVM.
-# Arguments like memory limits must be passed directly to the binary.
+# The native executable is self-contained (no JVM needed at runtime).
+# Run as the nonroot user (uid 65532) provided by the distroless base image.
+USER nonroot:nonroot
 ENTRYPOINT ["/app"]
+EXPOSE 8080
+
+# -----------------------------------------------------------------------------
+# Layer 3 — optional: multi-stage variant (for the "advanced" lesson)
+# -----------------------------------------------------------------------------
+# In a real project you'd split build + runtime more aggressively. Here we show
+# the same idea with a single GraalVM image used for both stages, to keep the
+# lesson focused on the toolchain rather than image optimisation.
+FROM ghcr.io/graalvm/native-image-community:${GRAALVM_VERSION} AS build-and-run
+WORKDIR /workspace
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw
+COPY src ./src
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw -Pnative -DskipTests package
+CMD ["./target/*-runner"]
